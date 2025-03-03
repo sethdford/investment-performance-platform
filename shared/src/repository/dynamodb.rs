@@ -17,6 +17,7 @@ use super::{Repository, PaginationOptions, PaginatedResult};
 /// The methods return hardcoded responses for testing and development purposes.
 /// In a production environment, these methods would be implemented to interact with
 /// an actual DynamoDB database.
+#[derive(Clone)]
 pub struct DynamoDbRepository {
     #[allow(dead_code)]
     client: DynamoDbClient,
@@ -32,6 +33,16 @@ impl DynamoDbRepository {
     /// database operations. Instead, it returns mock data.
     pub fn new(client: DynamoDbClient, table_name: String) -> Self {
         Self { client, table_name }
+    }
+
+    /// Create a new DynamoDB repository from environment variables
+    pub async fn from_env() -> Result<Self, AppError> {
+        let config = aws_config::load_from_env().await;
+        let client = DynamoDbClient::new(&config);
+        let table_name = std::env::var("TABLE_NAME")
+            .unwrap_or_else(|_| "mock_table".to_string());
+        
+        Ok(Self { client, table_name })
     }
 
     /// Get an item by ID and entity type
@@ -85,11 +96,13 @@ impl Repository for DynamoDbRepository {
             name: format!("Portfolio {}", id),
             client_id: "client-1".to_string(),
             inception_date: chrono::Utc::now().date_naive(),
-            benchmark_id: Some("benchmark-1".to_string()),
+            benchmark_id: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             status: crate::models::Status::Active,
             metadata: HashMap::new(),
+            transactions: Vec::new(),
+            holdings: Vec::new(),
         }))
     }
     
@@ -107,11 +120,13 @@ impl Repository for DynamoDbRepository {
                 name: format!("Portfolio {}", i),
                 client_id: "client-1".to_string(),
                 inception_date: chrono::Utc::now().date_naive(),
-                benchmark_id: Some("benchmark-1".to_string()),
+                benchmark_id: None,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
                 status: crate::models::Status::Active,
                 metadata: HashMap::new(),
+                transactions: Vec::new(),
+                holdings: Vec::new(),
             });
         }
         
