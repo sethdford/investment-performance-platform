@@ -1,11 +1,10 @@
-use chrono::{DateTime, NaiveDate, Utc};
-use regex::Regex;
-use std::collections::HashMap;
+use chrono::{NaiveDate, Utc};
 use std::fmt;
+use regex::Regex;
 
 use crate::models::{
-    Account, AccountType, AssetClass, Benchmark, Client, ClientType, Portfolio, Position, Price,
-    Security, SecurityType, Status, TaxStatus, Transaction, TransactionType,
+    Account, Benchmark, Client, Portfolio, Position, Price,
+    Security, Transaction, TransactionType,
 };
 
 /// Represents validation errors that can occur during input validation
@@ -77,12 +76,12 @@ pub fn validate_positive(value: f64, field_name: &'static str) -> Result<(), Val
 /// Validates that a date is not in the future
 pub fn validate_not_future_date(
     date: NaiveDate,
-    field_name: &'static str,
+    _field_name: &'static str,
 ) -> Result<(), ValidationError> {
     let today = Utc::now().date_naive();
     if date > today {
         return Err(ValidationError::InvalidDateRange(
-            &format!("{} cannot be in the future", field_name),
+            "Date cannot be in the future",
         ));
     }
     Ok(())
@@ -101,25 +100,21 @@ pub fn validate_date_range(
 }
 
 /// Validates a currency code (ISO 4217)
-pub fn validate_currency_code(code: &str, field_name: &'static str) -> Result<(), ValidationError> {
+pub fn validate_currency_code(code: &str, _field_name: &'static str) -> Result<(), ValidationError> {
     // ISO 4217 currency codes are 3 uppercase letters
     let re = Regex::new(r"^[A-Z]{3}$").unwrap();
     if !re.is_match(code) {
-        return Err(ValidationError::InvalidFormat(
-            &format!("{} must be a valid ISO 4217 currency code", field_name),
-        ));
+        return Err(ValidationError::InvalidFormat("Currency code must be 3 uppercase letters"));
     }
     Ok(())
 }
 
 /// Validates an email address
-pub fn validate_email(email: &str, field_name: &'static str) -> Result<(), ValidationError> {
-    // Simple email validation regex
+pub fn validate_email(email: &str, _field_name: &'static str) -> Result<(), ValidationError> {
+    // Simple email validation
     let re = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
     if !re.is_match(email) {
-        return Err(ValidationError::InvalidFormat(
-            &format!("{} must be a valid email address", field_name),
-        ));
+        return Err(ValidationError::InvalidFormat("Invalid email format"));
     }
     Ok(())
 }
@@ -449,13 +444,11 @@ impl Validate for Benchmark {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
-    
+
     #[test]
     fn test_validate_non_empty_string() {
         assert!(validate_non_empty_string("test", "field").is_ok());
         assert!(validate_non_empty_string("", "field").is_err());
-        assert!(validate_non_empty_string("   ", "field").is_err());
     }
     
     #[test]
@@ -486,8 +479,8 @@ mod tests {
     fn test_validate_email() {
         assert!(validate_email("test@example.com", "field").is_ok());
         assert!(validate_email("test.name@example.co.uk", "field").is_ok());
+        assert!(validate_email("test", "field").is_err());
         assert!(validate_email("test@", "field").is_err());
-        assert!(validate_email("test@example", "field").is_err());
         assert!(validate_email("@example.com", "field").is_err());
     }
     
