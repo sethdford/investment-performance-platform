@@ -4,7 +4,7 @@ A serverless Rust application for calculating investment portfolio performance m
 
 ## Overview
 
-The Investment Performance Calculator is a high-performance, scalable system built on AWS serverless architecture. It provides APIs for managing investment portfolios, items, and transactions, and calculates various performance metrics such as Time-Weighted Return (TWR), Money-Weighted Return (MWR), volatility, Sharpe ratio, and more.
+The Investment Performance Platform is a high-performance, scalable system built on AWS serverless architecture. It provides APIs for managing investment portfolios, items, and transactions, and calculates various performance metrics such as Time-Weighted Return (TWR), Money-Weighted Return (MWR), volatility, Sharpe ratio, and more.
 
 ## Architecture
 
