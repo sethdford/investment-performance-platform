@@ -9,7 +9,29 @@ A high-performance, scalable system for calculating investment portfolio perform
 
 The Rust Investment Performance Calculator provides a comprehensive platform for calculating and analyzing investment performance metrics for portfolios, accounts, and securities. It leverages the performance and safety of Rust along with the scalability of AWS serverless architecture.
 
-![Architecture Diagram](docs/images/architecture.png)
+### Architecture Diagram
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│             │     │             │     │             │
+│    Client   │────▶│ API Gateway │────▶│ API Handler │
+│             │     │             │     │             │
+└─────────────┘     └─────────────┘     └──────┬──────┘
+                                               │
+                                               ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│             │     │             │     │             │
+│  Timestream │◀────│ Performance │◀────│     SQS     │
+│             │     │ Calculator  │     │             │
+└─────────────┘     └─────────────┘     └──────┬──────┘
+                                               │
+                                               ▼
+                                        ┌─────────────┐
+                                        │             │
+                                        │  DynamoDB   │
+                                        │             │
+                                        └─────────────┘
+```
 
 ## ✨ Key Features
 
@@ -78,12 +100,24 @@ For more API examples, see the [API Reference](docs/api_reference.md).
 
 ## 📚 Documentation
 
+### Core Documentation
 - [Platform Overview](docs/platform_overview.md): Comprehensive overview of the platform
 - [Technical Architecture](docs/technical_architecture.md): Detailed technical architecture
-- [Developer Quickstart](docs/developer_quickstart.md): Quick guide for developers
-- [User Guide](docs/user-guide.md): Guide for API users
-- [API Reference](docs/api_reference.md): API documentation
+- [Consolidated Documentation](docs/consolidated_documentation.md): All-in-one documentation reference
+
+### Developer Resources
+- [Developer Quickstart](docs/developer_quickstart.md): Quick guide for new developers
+- [Developer Guide](docs/developer-guide.md): Comprehensive guide for developers
+- [API Reference](docs/api_reference.md): Detailed API documentation
 - [Future Roadmap](docs/future_roadmap.md): Planned improvements and enhancements
+
+### User Resources
+- [User Guide](docs/user-guide.md): Guide for API users
+
+### Operations Resources
+- [Security Hardening Guide](docs/security-hardening-guide.md): Security best practices
+- [Disaster Recovery Plan](docs/disaster-recovery-plan.md): Procedures for disaster recovery
+- [Cost Optimization Guide](docs/cost-optimization-guide.md): Cost optimization recommendations
 
 ## 🧪 Testing
 
