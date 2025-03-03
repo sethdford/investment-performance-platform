@@ -53,8 +53,22 @@ struct Portfolio {
     id: String,
     name: String,
     client_id: String,
+    inception_date: String,
+    benchmark_id: Option<String>,
     created_at: String,
     updated_at: Option<String>,
+    status: String,
+    metadata: HashMap<String, String>,
+    holdings: Vec<Holding>,
+    transactions: Vec<Transaction>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Holding {
+    symbol: String,
+    quantity: f64,
+    cost_basis: Option<f64>,
+    currency: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -136,6 +150,7 @@ struct EventPayload {
 }
 
 /// Event processor
+#[derive(Clone)]
 struct EventProcessor {
     dynamodb_client: DynamoDbClient,
     sqs_client: SqsClient,
@@ -231,7 +246,10 @@ impl EventProcessor {
     #[instrument(skip(self, affected_portfolios))]
     async fn process_message(&self, message: &SqsMessage, affected_portfolios: &mut HashSet<(String, String)>) -> Result<(), Error> {
         // Parse message body
-        let payload: EventPayload = serde_json::from_str(&message.body)
+        let body = message.body.as_ref()
+            .ok_or_else(|| Error::from("Message body is empty"))?;
+            
+        let payload: EventPayload = serde_json::from_str(body)
             .map_err(|e| Error::from(format!("Failed to parse message body: {}", e)))?;
             
         debug!("Processing event: {:?}", payload.event_type);
