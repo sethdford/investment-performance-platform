@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch Dashboard for Investment Performance Calculator'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: Environment name
+
+Resources:
+  PerformanceDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub InvestmentPerformanceCalculator-${Environment}
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "investment-performance-api-handler-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "investment-performance-event-processor-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "investment-performance-calculator-${Environment}", { "stat": "Sum", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Invocations",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "investment-performance-api-handler-${Environment}", { "stat": "Average", "period": 300 } ],
+                  [ "AWS/Lambda", "Duration", "FunctionName", "investment-performance-event-processor-${Environment}", { "stat": "Average", "period": 300 } ],
+                  [ "AWS/Lambda", "Duration", "FunctionName", "investment-performance-calculator-${Environment}", { "stat": "Average", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Duration",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Errors", "FunctionName", "investment-performance-api-handler-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/Lambda", "Errors", "FunctionName", "investment-performance-event-processor-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/Lambda", "Errors", "FunctionName", "investment-performance-calculator-${Environment}", { "stat": "Sum", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Errors",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "investment-performance-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "investment-performance-${Environment}", { "stat": "Sum", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "DynamoDB Consumed Capacity",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/SQS", "NumberOfMessagesSent", "QueueName", "investment-performance-queue-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/SQS", "NumberOfMessagesReceived", "QueueName", "investment-performance-queue-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "investment-performance-queue-${Environment}", { "stat": "Average", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "SQS Queue Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "investment-performance-api-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/ApiGateway", "4XXError", "ApiName", "investment-performance-api-${Environment}", { "stat": "Sum", "period": 300 } ],
+                  [ "AWS/ApiGateway", "5XXError", "ApiName", "investment-performance-api-${Environment}", { "stat": "Sum", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 18,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Timestream", "SuccessfulRequestLatency", "Operation", "Query", "DatabaseName", "investment-performance-${Environment}", { "stat": "Average", "period": 300 } ],
+                  [ "AWS/Timestream", "SuccessfulRequestLatency", "Operation", "WriteRecords", "DatabaseName", "investment-performance-${Environment}", { "stat": "Average", "period": 300 } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Timestream Latency",
+                "period": 300
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 24,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/investment-performance-api-handler-${Environment}' | filter @message like /ERROR/ | stats count() as errorCount by bin(30s)",
+                "region": "${AWS::Region}",
+                "title": "API Handler Errors",
+                "view": "timeSeries"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  DashboardURL:
+    Description: URL to the CloudWatch Dashboard
+    Value: !Sub https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${PerformanceDashboard} 

@@ -1,0 +1,8 @@
+{
+  "query": "query GetPortfolioPerformance($portfolioId: ID!, $startDate: DateTime!, $endDate: DateTime!) { portfolio(id: $portfolioId) { id name accounts { id name performanceMetrics(startDate: $startDate, endDate: $endDate) { id calculationDate timeWeightedReturn { returnValue calculationMethod annualized } moneyWeightedReturn { returnValue calculationMethod annualized } } } } }",
+  "variables": {
+    "portfolioId": "port-12345",
+    "startDate": "2023-01-01T00:00:00Z",
+    "endDate": "2023-12-31T23:59:59Z"
+  }
+} 

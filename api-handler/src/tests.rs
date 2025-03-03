@@ -12,6 +12,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::collections::HashMap;
     use serde_json::json;
+    use aws_lambda_events::event::apigw::{ApiGatewayProxyRequest, ApiGatewayProxyResponse};
+    use aws_lambda_events::encodings::Body;
+    use aws_sdk_dynamodb::Client as DynamoDbClient;
+    use tokio::sync::Mutex as TokioMutex;
 
     // Mock SQS client
     struct MockSqsClient {
@@ -99,6 +103,129 @@ mod tests {
             body,
             is_base64_encoded: Some(false),
             request_context: Default::default(),
+        }
+    }
+
+    // Mock DynamoDB client for testing
+    struct MockDynamoDbClient {
+        items: Arc<TokioMutex<HashMap<String, Item>>>,
+    }
+
+    impl MockDynamoDbClient {
+        fn new() -> Self {
+            Self {
+                items: Arc::new(TokioMutex::new(HashMap::new())),
+            }
+        }
+
+        async fn add_item(&self, item: Item) {
+            let mut items = self.items.lock().await;
+            items.insert(item.id.clone(), item);
+        }
+    }
+
+    // Test helper function to create a mock API Gateway request
+    fn create_mock_request(method: &str, path: &str, body: Option<String>) -> ApiGatewayProxyRequest {
+        let mut request = ApiGatewayProxyRequest::default();
+        request.http_method = method.to_string();
+        request.path = Some(path.to_string());
+        request.body = body;
+        
+        // Add request context with request ID
+        let mut request_context = aws_lambda_events::event::apigw::ApiGatewayProxyRequestContext::default();
+        request_context.request_id = Some("test-request-id".to_string());
+        request.request_context = Some(request_context);
+        
+        request
+    }
+
+    #[tokio::test]
+    async fn test_health_check() {
+        // Create a mock API handler
+        let api_handler = ApiHandler {
+            dynamodb_client: DynamoDbClient::new(&aws_config::from_env().region("us-east-1").build()),
+            table_name: "test-table".to_string(),
+        };
+        
+        // Create a mock request
+        let request = create_mock_request("GET", "/health", None);
+        
+        // Call the health check endpoint
+        let response = api_handler.handle_request(request).await.unwrap();
+        
+        // Verify the response
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.is_some());
+        
+        // Parse the response body
+        if let Some(Body::Text(body)) = response.body {
+            let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(json["status"], "ok");
+        } else {
+            panic!("Response body is not text");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_not_found() {
+        // Create a mock API handler
+        let api_handler = ApiHandler {
+            dynamodb_client: DynamoDbClient::new(&aws_config::from_env().region("us-east-1").build()),
+            table_name: "test-table".to_string(),
+        };
+        
+        // Create a mock request for a non-existent endpoint
+        let request = create_mock_request("GET", "/non-existent", None);
+        
+        // Call the API handler
+        let response = api_handler.handle_request(request).await.unwrap();
+        
+        // Verify the response
+        assert_eq!(response.status_code, 404);
+        assert!(response.body.is_some());
+        
+        // Parse the response body
+        if let Some(Body::Text(body)) = response.body {
+            let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(json["error"], "Not Found");
+        } else {
+            panic!("Response body is not text");
+        }
+    }
+
+    // Example of a more complex test with mocked data
+    #[tokio::test]
+    async fn test_list_clients() {
+        // This test would use a mock DynamoDB client to return predefined data
+        // and verify that the API handler correctly processes and returns it
+        
+        // For now, we'll just test that the endpoint returns a 200 response
+        // with a valid JSON body
+        
+        // Create a mock API handler
+        let api_handler = ApiHandler {
+            dynamodb_client: DynamoDbClient::new(&aws_config::from_env().region("us-east-1").build()),
+            table_name: "test-table".to_string(),
+        };
+        
+        // Create a mock request
+        let request = create_mock_request("GET", "/api/clients", None);
+        
+        // Call the API handler
+        let response = api_handler.handle_request(request).await.unwrap();
+        
+        // Verify the response
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.is_some());
+        
+        // Parse the response body
+        if let Some(Body::Text(body)) = response.body {
+            let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert!(json.get("clients").is_some());
+            assert!(json.get("count").is_some());
+            assert!(json.get("request_id").is_some());
+        } else {
+            panic!("Response body is not text");
         }
     }
 

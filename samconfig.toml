@@ -1,11 +1,47 @@
 version = 0.1
+
 [default]
-[default.deploy]
+[default.global.parameters]
+stack_name = "rust-investment-performance-dev"
+
+[default.build.parameters]
+cached = true
+parallel = true
+template = "template-development.yml"
+
 [default.deploy.parameters]
-stack_name = "rust-sam-app"
-s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket"
-s3_prefix = "rust-sam-app"
-region = "us-east-1"
-confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "Environment=dev" 
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "rust-investment-performance-dev"
+region = "us-east-1"
+parameter_overrides = "Environment=dev"
+template = "template-development.yml"
+
+[default.sync.parameters]
+watch = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+template = "template-development.yml"
+
+[prod]
+[prod.global.parameters]
+stack_name = "rust-investment-performance-prod"
+
+[prod.build.parameters]
+cached = true
+parallel = true
+template = "template-production.yaml"
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "rust-investment-performance-prod"
+region = "us-east-1"
+parameter_overrides = "Environment=prod PrivateSubnet1=subnet-12345 PrivateSubnet2=subnet-67890 PrivateSubnet3=subnet-abcdef DefaultSecurityGroup=sg-123456"
+template = "template-production.yaml"
+
+[prod.sync.parameters]
+watch = false 

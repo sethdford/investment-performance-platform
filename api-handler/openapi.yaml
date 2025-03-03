@@ -1,0 +1,1357 @@
+openapi: 3.1.0
+info:
+  title: Investment Performance Calculator API
+  description: |
+    API for calculating investment performance metrics.
+    
+    This API allows you to manage portfolios, items, and transactions, and calculate performance metrics such as TWR, MWR, volatility, Sharpe ratio, etc.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+    url: https://example.com/support
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: https://api-dev.example.com/v1
+    description: Development server
+tags:
+  - name: Portfolios
+    description: Portfolio management
+  - name: Items
+    description: Item management
+  - name: Transactions
+    description: Transaction management
+  - name: Performance
+    description: Performance calculations
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error details
+      required:
+        - code
+        - message
+    
+    Portfolio:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the portfolio
+        tenant_id:
+          type: string
+          description: Tenant ID that owns this portfolio
+        name:
+          type: string
+          description: Portfolio name
+        client_id:
+          type: string
+          description: Client ID that owns this portfolio
+        inception_date:
+          type: string
+          format: date
+          description: Portfolio inception date
+        benchmark_id:
+          type: string
+          nullable: true
+          description: Portfolio benchmark ID
+        created_at:
+          type: string
+          format: date-time
+          description: Portfolio creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Portfolio last updated timestamp
+        status:
+          type: string
+          enum: [active, inactive, archived]
+          description: Portfolio status
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional portfolio metadata
+      required:
+        - id
+        - tenant_id
+        - name
+        - client_id
+        - inception_date
+        - created_at
+        - updated_at
+        - status
+    
+    Item:
+      type:
+    
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the transaction
+        account_id:
+          type: string
+          description: Account ID this transaction belongs to
+        security_id:
+          type: string
+          nullable: true
+          description: Security ID this transaction involves
+        transaction_date:
+          type: string
+          format: date
+          description: Transaction date
+        settlement_date:
+          type: string
+          format: date
+          nullable: true
+          description: Settlement date
+        transaction_type:
+          type: string
+          enum: [buy, sell, deposit, withdrawal, dividend, interest, fee, transfer, split, other]
+          description: Transaction type
+        amount:
+          type: number
+          format: double
+          description: Transaction amount
+        quantity:
+          type: number
+          format: double
+          nullable: true
+          description: Transaction quantity
+        price:
+          type: number
+          format: double
+          nullable: true
+          description: Transaction price
+        fees:
+          type: number
+          format: double
+          nullable: true
+          description: Transaction fees
+        currency:
+          type: string
+          description: Transaction currency
+        created_at:
+          type: string
+          format: date-time
+          description: Transaction creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Transaction last updated timestamp
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional transaction metadata
+      required:
+        - id
+        - account_id
+        - transaction_date
+        - transaction_type
+        - amount
+        - currency
+        - created_at
+        - updated_at
+    
+    PaginatedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+          description: List of items
+        next_token:
+          type: string
+          nullable: true
+          description: Token for retrieving the next page of results
+      required:
+        - items
+    
+    CreatePortfolioRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Portfolio name
+        client_id:
+          type: string
+          description: Client ID
+        inception_date:
+          type: string
+          format: date
+          description: Portfolio inception date
+        benchmark_id:
+          type: string
+          nullable: true
+          description: Portfolio benchmark ID
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional portfolio metadata
+      required:
+        - name
+        - client_id
+        - inception_date
+    
+    UpdatePortfolioRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Portfolio name
+        benchmark_id:
+          type: string
+          nullable: true
+          description: Portfolio benchmark ID
+        status:
+          type: string
+          enum: [active, inactive, archived]
+          description: Portfolio status
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional portfolio metadata
+      required:
+        - name
+        - status
+    
+    CalculatePerformanceRequest:
+      type: object
+      properties:
+        portfolio_id:
+          type: string
+          description: Portfolio ID
+        start_date:
+          type: string
+          format: date
+          description: Start date
+        end_date:
+          type: string
+          format: date
+          description: End date
+        benchmark_id:
+          type: string
+          nullable: true
+          description: Benchmark ID
+        include_details:
+          type: boolean
+          default: false
+          description: Include details flag
+      required:
+        - portfolio_id
+        - start_date
+        - end_date
+    
+    CalculatePerformanceResponse:
+      type: object
+      properties:
+        portfolio_id:
+          type: string
+          description: Portfolio ID
+        start_date:
+          type: string
+          format: date
+          description: Start date
+        end_date:
+          type: string
+          format: date
+          description: End date
+        twr:
+          type: number
+          format: double
+          description: Time-weighted return
+        mwr:
+          type: number
+          format: double
+          description: Money-weighted return
+        volatility:
+          type: number
+          format: double
+          nullable: true
+          description: Volatility
+        sharpe_ratio:
+          type: number
+          format: double
+          nullable: true
+          description: Sharpe ratio
+        max_drawdown:
+          type: number
+          format: double
+          nullable: true
+          description: Maximum drawdown
+        benchmark_return:
+          type: number
+          format: double
+          nullable: true
+          description: Benchmark return
+        benchmark_id:
+          type: string
+          nullable: true
+          description: Benchmark ID
+        calculated_at:
+          type: string
+          format: date-time
+          description: Calculation timestamp
+        details:
+          type: object
+          nullable: true
+          description: Performance details
+      required:
+        - portfolio_id
+        - start_date
+        - end_date
+        - twr
+        - mwr
+        - calculated_at
+    
+    BatchCalculationRequest:
+      type: object
+      properties:
+        portfolio_ids:
+          type: array
+          items:
+            type: string
+          description: List of portfolio IDs to calculate
+        start_date:
+          type: string
+          format: date
+          description: Start date for calculation
+        end_date:
+          type: string
+          format: date
+          description: End date for calculation
+        include_details:
+          type: boolean
+          description: Whether to include detailed results
+      required:
+        - portfolio_ids
+        - start_date
+        - end_date
+    
+    BatchCalculationResponse:
+      type: object
+      properties:
+        results:
+          type: object
+          additionalProperties:
+            oneOf:
+              - $ref: '#/components/schemas/CalculationResult'
+              - type: object
+                properties:
+                  error:
+                    type: string
+                    description: Error message
+        duration_ms:
+          type: number
+          format: double
+          description: Duration in milliseconds
+      required:
+        - results
+        - duration_ms
+
+paths:
+  /portfolios:
+    get:
+      summary: List portfolios
+      description: Returns a list of portfolios
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: client_id
+          in: query
+          description: Filter by client ID
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of items to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: next_token
+          in: query
+          description: Token for retrieving the next page of results
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a portfolio
+      description: Creates a new portfolio
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePortfolioRequest'
+      responses:
+        '201':
+          description: Portfolio created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolio:
+                    $ref: '#/components/schemas/Portfolio'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /portfolios/{id}:
+    get:
+      summary: Get a portfolio
+      description: Returns a portfolio by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolio:
+                    $ref: '#/components/schemas/Portfolio'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update a portfolio
+      description: Updates an existing portfolio
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePortfolioRequest'
+      responses:
+        '200':
+          description: Portfolio updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portfolio:
+                    $ref: '#/components/schemas/Portfolio'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a portfolio
+      description: Delete a portfolio by its unique identifier
+      tags:
+        - Portfolios
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Portfolio deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /portfolios/{id}/items:
+    post:
+      summary: Create a new item in a portfolio
+      description: Create a new item in the specified portfolio
+      tags:
+        - Items
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Item'
+      responses:
+        '201':
+          description: Item created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    get:
+      summary: Get all items in a portfolio
+      description: Get all items in the specified portfolio
+      tags:
+        - Items
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: status
+          in: query
+          description: Filter by status
+          required: false
+          schema:
+            type: string
+            enum: [active, inactive, archived]
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Item'
+                  total:
+                    type: integer
+                    description: Total number of items
+                  page:
+                    type: integer
+                    description: Current page
+                  limit:
+                    type: integer
+                    description: Number of items per page
+                required:
+                  - items
+                  - total
+                  - page
+                  - limit
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /items/{id}:
+    get:
+      summary: Get an item by ID
+      description: Get an item by its unique identifier
+      tags:
+        - Items
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Item ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    put:
+      summary: Update an item
+      description: Update an item with the provided data
+      tags:
+        - Items
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Item ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Item'
+      responses:
+        '200':
+          description: Item updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      summary: Delete an item
+      description: Delete an item by its unique identifier
+      tags:
+        - Items
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Item ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Item deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /items/{id}/transactions:
+    post:
+      summary: Create a new transaction for an item
+      description: Create a new transaction for the specified item
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Item ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Transaction'
+      responses:
+        '201':
+          description: Transaction created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    get:
+      summary: Get all transactions for an item
+      description: Get all transactions for the specified item
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Item ID
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of transactions per page
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: status
+          in: query
+          description: Filter by status
+          required: false
+          schema:
+            type: string
+            enum: [pending, settled, cancelled]
+        - name: start_date
+          in: query
+          description: Filter by start date
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          description: Filter by end date
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  total:
+                    type: integer
+                    description: Total number of transactions
+                  page:
+                    type: integer
+                    description: Current page
+                  limit:
+                    type: integer
+                    description: Number of transactions per page
+                required:
+                  - items
+                  - total
+                  - page
+                  - limit
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /transactions/{id}:
+    get:
+      summary: Get a transaction by ID
+      description: Get a transaction by its unique identifier
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Transaction ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    put:
+      summary: Update a transaction
+      description: Update a transaction with the provided data
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Transaction ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Transaction'
+      responses:
+        '200':
+          description: Transaction updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      summary: Delete a transaction
+      description: Delete a transaction by its unique identifier
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Transaction ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Transaction deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /calculate:
+    post:
+      summary: Calculate performance
+      description: Calculates performance metrics for a portfolio
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculatePerformanceRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatePerformanceResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /batch-calculate:
+    post:
+      summary: Batch calculate performance metrics
+      description: Calculate performance metrics for multiple portfolios
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchCalculationRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchCalculationResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /portfolios/{id}/performance:
+    get:
+      summary: Get performance metrics for a portfolio
+      description: Get performance metrics for the specified portfolio
+      tags:
+        - Performance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          description: Start date for calculation
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          description: End date for calculation
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: include_details
+          in: query
+          description: Whether to include detailed results
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationResult'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /portfolios/{id}/performance/time-series:
+    get:
+      summary: Get time-series performance data for a portfolio
+      description: Get time-series performance data for the specified portfolio
+      tags:
+        - Performance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Portfolio ID
+          required: true
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          description: Start date for the time series
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          description: End date for the time series
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: interval
+          in: query
+          description: Time series interval
+          required: true
+          schema:
+            type: string
+            enum: [daily, weekly, monthly, quarterly, yearly]
+        - name: include_benchmark
+          in: query
+          description: Whether to include benchmark data
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimeSeriesDataPoint'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Portfolio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error' 

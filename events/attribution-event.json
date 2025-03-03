@@ -1,0 +1,8 @@
+{
+  "type": "attribution_analysis",
+  "portfolio_id": "port-12345",
+  "benchmark_id": "bench-54321",
+  "start_date": "2023-01-01",
+  "end_date": "2023-06-30",
+  "request_id": "req-98765"
+} 

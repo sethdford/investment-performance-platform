@@ -1,0 +1,337 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Investment Performance Calculator
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: Environment name
+
+  DynamoDBTableName:
+    Type: String
+    Default: investment-performance
+    Description: DynamoDB table name
+
+  TimestreamDatabaseName:
+    Type: String
+    Default: investment-performance
+    Description: Timestream database name
+
+  TimestreamTableName:
+    Type: String
+    Default: performance-metrics
+    Description: Timestream table name
+
+  ApiStageName:
+    Type: String
+    Default: v1
+    Description: API Gateway stage name
+
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    Description: CloudWatch Logs retention period in days
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: provided.al2
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        RUST_LOG: info
+        ENVIRONMENT: !Ref Environment
+        DYNAMODB_TABLE: !Ref DynamoDBTableName
+        TIMESTREAM_DATABASE: !Ref TimestreamDatabaseName
+        TIMESTREAM_TABLE: !Ref TimestreamTableName
+    Tracing: Active
+
+Resources:
+  # DynamoDB Table
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${DynamoDBTableName}-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: entity_type
+          AttributeType: S
+        - AttributeName: client_id
+          AttributeType: S
+        - AttributeName: account_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: entity_type
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ClientIndex
+          KeySchema:
+            - AttributeName: client_id
+              KeyType: HASH
+            - AttributeName: entity_type
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: AccountIndex
+          KeySchema:
+            - AttributeName: account_id
+              KeyType: HASH
+            - AttributeName: entity_type
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Timestream Database
+  TimestreamDatabase:
+    Type: AWS::Timestream::Database
+    Properties:
+      DatabaseName: !Sub ${TimestreamDatabaseName}-${Environment}
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Timestream Table
+  TimestreamTable:
+    Type: AWS::Timestream::Table
+    Properties:
+      DatabaseName: !Ref TimestreamDatabase
+      TableName: !Sub ${TimestreamTableName}-${Environment}
+      RetentionProperties:
+        MemoryStoreRetentionPeriodInHours: 24
+        MagneticStoreRetentionPeriodInDays: 365
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SQS Queue for Event Processing
+  EventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub investment-performance-events-${Environment}
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600 # 14 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EventDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SQS Dead Letter Queue
+  EventDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub investment-performance-events-dlq-${Environment}
+      MessageRetentionPeriod: 1209600 # 14 days
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # API Handler Lambda Function
+  ApiHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub investment-performance-api-${Environment}
+      CodeUri: ../api-handler/
+      Handler: bootstrap
+      Description: API Handler for Investment Performance Calculator
+      Environment:
+        Variables:
+          SQS_QUEUE_URL: !Ref EventQueue
+          JWT_SECRET: !Sub '{{resolve:secretsmanager:investment-performance-${Environment}:SecretString:JwtSecret}}'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt EventQueue.QueueName
+        - TimestreamReadPolicy:
+            DatabaseName: !Ref TimestreamDatabase
+            TableName: !Ref TimestreamTable
+        - CloudWatchPutMetricPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /{proxy+}
+            Method: ANY
+      Tags:
+        Environment: !Ref Environment
+
+  # Event Processor Lambda Function
+  EventProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub investment-performance-event-processor-${Environment}
+      CodeUri: ../event-processor/
+      Handler: bootstrap
+      Description: Event Processor for Investment Performance Calculator
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+        - TimestreamWritePolicy:
+            DatabaseName: !Ref TimestreamDatabase
+            TableName: !Ref TimestreamTable
+        - CloudWatchPutMetricPolicy: {}
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EventQueue.Arn
+            BatchSize: 10
+      Tags:
+        Environment: !Ref Environment
+
+  # Performance Calculator Lambda Function
+  PerformanceCalculatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub investment-performance-calculator-${Environment}
+      CodeUri: ../performance-calculator/
+      Handler: bootstrap
+      Description: Performance Calculator for Investment Performance Calculator
+      MemorySize: 1024
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+        - TimestreamReadPolicy:
+            DatabaseName: !Ref TimestreamDatabase
+            TableName: !Ref TimestreamTable
+        - TimestreamWritePolicy:
+            DatabaseName: !Ref TimestreamDatabase
+            TableName: !Ref TimestreamTable
+        - CloudWatchPutMetricPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /calculate
+            Method: POST
+      Tags:
+        Environment: !Ref Environment
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub investment-performance-api-${Environment}
+      StageName: !Ref ApiStageName
+      Auth:
+        DefaultAuthorizer: JwtAuthorizer
+        Authorizers:
+          JwtAuthorizer:
+            FunctionArn: !GetAtt ApiHandlerFunction.Arn
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          MetricsEnabled: true
+          DataTraceEnabled: true
+          LoggingLevel: INFO
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+      Tags:
+        Environment: !Ref Environment
+
+  # CloudWatch Log Groups
+  ApiHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiHandlerFunction}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  EventProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${EventProcessorFunction}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  PerformanceCalculatorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PerformanceCalculatorFunction}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${ApiGateway}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  # CloudWatch Alarms
+  ApiErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub investment-performance-api-errors-${Environment}
+      AlarmDescription: Alarm for API errors
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref ApiGateway
+        - Name: Stage
+          Value: !Ref ApiStageName
+      TreatMissingData: notBreaching
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub investment-performance-lambda-errors-${Environment}
+      AlarmDescription: Alarm for Lambda errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiHandlerFunction
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/
+
+  DynamoDBTableName:
+    Description: DynamoDB table name
+    Value: !Ref DynamoDBTable
+
+  TimestreamDatabaseName:
+    Description: Timestream database name
+    Value: !Ref TimestreamDatabase
+
+  TimestreamTableName:
+    Description: Timestream table name
+    Value: !Ref TimestreamTable
+
+  EventQueueUrl:
+    Description: SQS queue URL
+    Value: !Ref EventQueue 

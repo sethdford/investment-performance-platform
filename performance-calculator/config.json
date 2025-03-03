@@ -1,0 +1,16 @@
+{
+  "dynamodb_table": "performance_metrics",
+  "timestream_database": "investment_performance",
+  "timestream_table": "performance_metrics",
+  "cache": {
+    "enabled": true,
+    "ttl_seconds": 300
+  },
+  "parallel": {
+    "max_concurrency": 5
+  },
+  "risk_metrics": {
+    "risk_free_rate": 0.02,
+    "var_confidence_level": 0.95
+  }
+} 

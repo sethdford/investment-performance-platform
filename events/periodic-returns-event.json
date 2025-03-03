@@ -1,0 +1,8 @@
+{
+  "type": "periodic_returns",
+  "portfolio_id": "port-12345",
+  "start_date": "2023-01-01",
+  "end_date": "2023-06-30",
+  "periods": ["monthly", "quarterly", "annual", "ytd", "since_inception"],
+  "request_id": "req-98765"
+} 

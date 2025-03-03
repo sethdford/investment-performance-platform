@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  API Request Reset Lambda
+  
+  Lambda function to reset API request counters for multi-tenant support
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 128
+    Tracing: Active
+    Environment:
+      Variables:
+        RUST_LOG: info
+        DYNAMODB_TABLE: !Ref TenantTable
+        TENANT_METRICS_TABLE: !Ref TenantMetricsTable
+
+Resources:
+  ApiRequestResetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: bootstrap
+      Runtime: provided.al2
+      Architectures:
+        - x86_64
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TenantTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TenantMetricsTable
+      Events:
+        ScheduledEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Name: ApiRequestResetSchedule
+            Description: Schedule to reset API request counters every minute
+            Enabled: true
+  
+  TenantTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: tenants
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  
+  TenantMetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: tenant-metrics
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+
+Outputs:
+  ApiRequestResetFunction:
+    Description: "API Request Reset Lambda Function ARN"
+    Value: !GetAtt ApiRequestResetFunction.Arn
+  
+  ApiRequestResetFunctionRole:
+    Description: "Implicit IAM Role created for API Request Reset function"
+    Value: !GetAtt ApiRequestResetFunctionRole.Arn
+  
+  TenantTable:
+    Description: "DynamoDB table for tenants"
+    Value: !Ref TenantTable
+  
+  TenantMetricsTable:
+    Description: "DynamoDB table for tenant metrics"
+    Value: !Ref TenantMetricsTable 

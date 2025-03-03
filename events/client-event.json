@@ -1,0 +1,22 @@
+{
+  "type": "client",
+  "source": "manual",
+  "data": {
+    "id": "client-98765",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "phone": "+1-555-123-4567",
+    "address": {
+      "street": "123 Main St",
+      "city": "Anytown",
+      "state": "CA",
+      "zip": "12345",
+      "country": "USA"
+    },
+    "tax_id": "123-45-6789",
+    "status": "ACTIVE",
+    "client_type": "INDIVIDUAL",
+    "onboarding_date": "2020-01-01T00:00:00Z",
+    "relationship_manager_id": "rm-54321"
+  }
+} 

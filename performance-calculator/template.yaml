@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Investment Performance Calculator - Multi-Tenant Support
+  
+  CloudFormation template for the DynamoDB tables needed for tenant metrics
+
+Resources:
+  TenantTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: tenants
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Application
+          Value: InvestmentPerformanceCalculator
+        - Key: Component
+          Value: TenantManagement
+  
+  TenantMetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: tenant-metrics
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+      Tags:
+        - Key: Application
+          Value: InvestmentPerformanceCalculator
+        - Key: Component
+          Value: TenantMetrics
+  
+  TenantBillingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: tenant-billing
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+      Tags:
+        - Key: Application
+          Value: InvestmentPerformanceCalculator
+        - Key: Component
+          Value: TenantBilling
+      
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: username
+          AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UsernameIndex
+          KeySchema:
+            - AttributeName: username
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: TenantIndex
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Application
+          Value: InvestmentPerformanceCalculator
+        - Key: Component
+          Value: UserManagement
+
+Outputs:
+  TenantTable:
+    Description: "DynamoDB table for tenants"
+    Value: !Ref TenantTable
+  
+  TenantMetricsTable:
+    Description: "DynamoDB table for tenant metrics"
+    Value: !Ref TenantMetricsTable
+  
+  TenantBillingTable:
+    Description: "DynamoDB table for tenant billing records"
+    Value: !Ref TenantBillingTable
+  
+  UserTable:
+    Description: "DynamoDB table for users"
+    Value: !Ref UserTable 

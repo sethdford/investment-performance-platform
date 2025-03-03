@@ -1,0 +1,15 @@
+{
+  "type": "account",
+  "source": "manual",
+  "data": {
+    "id": "acct-67890",
+    "name": "John Doe's 401(k)",
+    "portfolio_id": "port-12345",
+    "account_type": "RETIREMENT",
+    "tax_status": "TAX_DEFERRED",
+    "currency": "USD",
+    "open_date": "2020-01-15T00:00:00Z",
+    "status": "ACTIVE",
+    "custodian": "Fidelity Investments"
+  }
+} 

@@ -113,13 +113,13 @@ For integration testing with actual AWS services, you can deploy a test stack:
 
 ```bash
 # Deploy a test stack
-sam deploy --stack-name rust-sam-test --parameter-overrides Environment=test
+sam deploy --stack-name rust-investment-performance-test --parameter-overrides Environment=test
 
 # Run integration tests against the test stack
 # (You would need to implement these tests separately)
 
 # Clean up the test stack
-aws cloudformation delete-stack --stack-name rust-sam-test
+aws cloudformation delete-stack --stack-name rust-investment-performance-test
 ```
 
 ## Continuous Integration

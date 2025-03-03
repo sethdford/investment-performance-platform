@@ -9,14 +9,18 @@
 /// * `repository` - DynamoDB repository for data access
 /// * `error` - Error handling
 /// * `config` - Configuration management
+/// * `validation` - Data validation utilities and implementations
 
 pub mod models;
 pub mod repository;
 pub mod error;
 pub mod config;
+pub mod validation;
 
 // Re-export common types
 pub use error::AppError;
+pub use validation::{Validate, ValidationError};
+pub use repository::{Repository, PaginationOptions, PaginatedResult};
 
 #[cfg(test)]
 mod tests; 

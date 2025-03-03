@@ -1,0 +1,350 @@
+# PRODUCTION DEPLOYMENT TEMPLATE
+# This is the comprehensive production deployment template with full infrastructure
+# including DynamoDB with GSIs, DAX cluster, Timestream, SQS queues, and multiple Lambda functions.
+# Use this template for production or staging environments.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  rust-investment-performance
+
+  Investment Performance Application for Asset Managers
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: Environment name
+  
+  PrivateSubnet1:
+    Type: String
+    Description: ID of the first private subnet for DAX
+  
+  PrivateSubnet2:
+    Type: String
+    Description: ID of the second private subnet for DAX
+  
+  PrivateSubnet3:
+    Type: String
+    Description: ID of the third private subnet for DAX
+  
+  DefaultSecurityGroup:
+    Type: String
+    Description: ID of the default security group for DAX
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Runtime: provided.al2
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        RUST_BACKTRACE: 1
+        RUST_LOG: info
+        ENVIRONMENT: !Ref Environment
+
+Resources:
+  # DynamoDB Table
+  InvestmentPerformanceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub investment-performance-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # DAX Cluster
+  DaxSubnetGroup:
+    Type: AWS::DAX::SubnetGroup
+    Properties:
+      SubnetGroupName: !Sub investment-performance-dax-subnet-group-${Environment}
+      Description: Subnet group for DAX cluster
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+
+  DaxParameterGroup:
+    Type: AWS::DAX::ParameterGroup
+    Properties:
+      ParameterGroupName: !Sub investment-performance-dax-params-${Environment}
+      Description: Parameter group for DAX cluster
+
+  DaxCluster:
+    Type: AWS::DAX::Cluster
+    Properties:
+      ClusterName: !Sub investment-performance-dax-${Environment}
+      NodeType: dax.t3.small
+      ReplicationFactor: 3
+      IAMRoleARN: !GetAtt DaxServiceRole.Arn
+      ParameterGroupName: !Ref DaxParameterGroup
+      SubnetGroupName: !Ref DaxSubnetGroup
+      SecurityGroupIds:
+        - !Ref DefaultSecurityGroup
+      SSESpecification:
+        SSEEnabled: true
+
+  DaxServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: dax.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+
+  # Timestream Database and Table
+  TimestreamDatabase:
+    Type: AWS::Timestream::Database
+    Properties:
+      DatabaseName: !Sub investment-performance-${Environment}
+
+  TimestreamTable:
+    Type: AWS::Timestream::Table
+    Properties:
+      DatabaseName: !Ref TimestreamDatabase
+      TableName: performance-metrics
+      RetentionProperties:
+        MemoryStoreRetentionPeriodInHours: "24"
+        MagneticStoreRetentionPeriodInDays: "731"
+
+  # SQS Queue for Performance Calculation
+  PerformanceCalculationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub investment-performance-calculation-${Environment}.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: false
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PerformanceCalculationDLQ.Arn
+        maxReceiveCount: 3
+
+  PerformanceCalculationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub investment-performance-calculation-dlq-${Environment}.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: false
+
+  # Lambda Functions
+  ApiHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: api-handler/
+      Handler: bootstrap
+      Description: API Handler for Investment Performance Application
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref InvestmentPerformanceTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestmentPerformanceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dax:*
+              Resource: !GetAtt DaxCluster.Arn
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /api/{proxy+}
+            Method: ANY
+
+  EventProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: event-processor/
+      Handler: bootstrap
+      Description: Event Processor for Investment Performance Application
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref InvestmentPerformanceTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestmentPerformanceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dax:*
+              Resource: !GetAtt DaxCluster.Arn
+      Events:
+        DynamoDBEvent:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt InvestmentPerformanceTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 100
+            MaximumBatchingWindowInSeconds: 10
+
+  DataIngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: data-ingestion/
+      Handler: bootstrap
+      Description: Data Ingestion for Investment Performance Application
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref InvestmentPerformanceTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+          PROCESSING_QUEUE_URL: !Ref PerformanceCalculationQueue
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestmentPerformanceTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt PerformanceCalculationQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dax:*
+              Resource: !GetAtt DaxCluster.Arn
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /ingest/{proxy+}
+            Method: ANY
+
+  PerformanceCalculatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: performance-calculator/
+      Handler: bootstrap
+      Description: Performance Calculator for Investment Performance Application
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref InvestmentPerformanceTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+          TIMESTREAM_DATABASE: !Ref TimestreamDatabase
+          TIMESTREAM_TABLE: !Ref TimestreamTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestmentPerformanceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dax:*
+              Resource: !GetAtt DaxCluster.Arn
+            - Effect: Allow
+              Action:
+                - timestream:*
+              Resource: 
+                - !Sub arn:aws:timestream:${AWS::Region}:${AWS::AccountId}:database/${TimestreamDatabase}
+                - !Sub arn:aws:timestream:${AWS::Region}:${AWS::AccountId}:database/${TimestreamDatabase}/table/${TimestreamTable}
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PerformanceCalculationQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 60
+
+  GraphQLApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: graphql-api/
+      Handler: bootstrap
+      Description: GraphQL API for Investment Performance Application
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref InvestmentPerformanceTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+          TIMESTREAM_DATABASE: !Ref TimestreamDatabase
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvestmentPerformanceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dax:*
+              Resource: !GetAtt DaxCluster.Arn
+            - Effect: Allow
+              Action:
+                - timestream:Query
+                - timestream:DescribeEndpoints
+              Resource: 
+                - !Sub arn:aws:timestream:${AWS::Region}:${AWS::AccountId}:database/${TimestreamDatabase}
+                - !Sub arn:aws:timestream:${AWS::Region}:${AWS::AccountId}:database/${TimestreamDatabase}/table/${TimestreamTable}
+      Events:
+        GraphQLEvent:
+          Type: Api
+          Properties:
+            Path: /graphql
+            Method: POST
+        GraphiQLEvent:
+          Type: Api
+          Properties:
+            Path: /graphiql
+            Method: GET
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  
+  GraphQLEndpoint:
+    Description: "GraphQL API endpoint URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/graphql"
+  
+  GraphiQLEndpoint:
+    Description: "GraphiQL UI endpoint URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/graphiql"
+  
+  DynamoDBTableName:
+    Description: "DynamoDB table name"
+    Value: !Ref InvestmentPerformanceTable
+  
+  DaxEndpoint:
+    Description: "DAX cluster endpoint"
+    Value: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+  
+  TimestreamDatabaseName:
+    Description: "Timestream database name"
+    Value: !Ref TimestreamDatabase
+  
+  TimestreamTableName:
+    Description: "Timestream table name"
+    Value: !Ref TimestreamTable
+  
+  PerformanceCalculationQueueUrl:
+    Description: "SQS queue URL for performance calculation"
+    Value: !Ref PerformanceCalculationQueue 

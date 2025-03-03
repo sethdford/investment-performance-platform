@@ -1,0 +1,15 @@
+{
+  "type": "security",
+  "source": "manual",
+  "data": {
+    "id": "sec-54321",
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "security_type": "EQUITY",
+    "exchange": "NASDAQ",
+    "currency": "USD",
+    "isin": "US0378331005",
+    "sector": "Technology",
+    "industry": "Consumer Electronics"
+  }
+} 

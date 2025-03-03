@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDate};
+use std::collections::HashMap;
 
 /// Represents an item in the system
 ///
@@ -132,6 +133,501 @@ pub struct AuditRecord {
     
     /// Hash of the original request for non-repudiation
     pub hash: Option<String>,
+}
+
+/// Represents a client in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Client {
+    /// Unique identifier for the client
+    #[serde(default = "generate_id")]
+    pub id: String,
+    
+    /// Client name
+    pub name: String,
+    
+    /// Client type (Individual, Institution, etc.)
+    pub client_type: ClientType,
+    
+    /// Client contact information
+    pub contact: ContactInfo,
+    
+    /// Client classification/segmentation
+    pub classification: String,
+    
+    /// Client creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Client last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+    
+    /// Client status
+    #[serde(default = "default_status")]
+    pub status: Status,
+    
+    /// Additional client metadata
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+}
+
+/// Client type enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ClientType {
+    Individual,
+    Joint,
+    Institution,
+    Trust,
+    Other(String),
+}
+
+/// Contact information
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ContactInfo {
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub address: Option<Address>,
+}
+
+/// Physical address
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Address {
+    pub street1: String,
+    pub street2: Option<String>,
+    pub city: String,
+    pub state: String,
+    pub postal_code: String,
+    pub country: String,
+}
+
+/// Status enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum Status {
+    Active,
+    Inactive,
+    Pending,
+    Closed,
+}
+
+/// Returns the default status
+fn default_status() -> Status {
+    Status::Active
+}
+
+/// Represents a portfolio in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Portfolio {
+    /// Unique identifier for the portfolio
+    #[serde(default = "generate_id")]
+    pub id: String,
+    
+    /// Portfolio name
+    pub name: String,
+    
+    /// Client ID that owns this portfolio
+    pub client_id: String,
+    
+    /// Portfolio inception date
+    pub inception_date: NaiveDate,
+    
+    /// Portfolio benchmark ID
+    pub benchmark_id: Option<String>,
+    
+    /// Portfolio creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Portfolio last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+    
+    /// Portfolio status
+    #[serde(default = "default_status")]
+    pub status: Status,
+    
+    /// Additional portfolio metadata
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+}
+
+/// Represents an account in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Account {
+    /// Unique identifier for the account
+    #[serde(default = "generate_id")]
+    pub id: String,
+    
+    /// Account number
+    pub account_number: String,
+    
+    /// Account name
+    pub name: String,
+    
+    /// Portfolio ID this account belongs to
+    pub portfolio_id: String,
+    
+    /// Account type
+    pub account_type: AccountType,
+    
+    /// Account inception date
+    pub inception_date: NaiveDate,
+    
+    /// Account tax status
+    pub tax_status: TaxStatus,
+    
+    /// Account creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Account last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+    
+    /// Account status
+    #[serde(default = "default_status")]
+    pub status: Status,
+    
+    /// Additional account metadata
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+}
+
+/// Account type enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum AccountType {
+    Individual,
+    Joint,
+    IRA,
+    Roth,
+    Trust,
+    CorporateRetirement,
+    Custodial,
+    Other(String),
+}
+
+/// Tax status enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum TaxStatus {
+    Taxable,
+    TaxDeferred,
+    TaxExempt,
+}
+
+/// Represents a security in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Security {
+    /// Unique identifier for the security
+    #[serde(default = "generate_id")]
+    pub id: String,
+    
+    /// Security symbol
+    pub symbol: String,
+    
+    /// Security name
+    pub name: String,
+    
+    /// Security type
+    pub security_type: SecurityType,
+    
+    /// Security asset class
+    pub asset_class: AssetClass,
+    
+    /// CUSIP identifier
+    pub cusip: Option<String>,
+    
+    /// ISIN identifier
+    pub isin: Option<String>,
+    
+    /// SEDOL identifier
+    pub sedol: Option<String>,
+    
+    /// Security creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Security last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+    
+    /// Additional security metadata
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+}
+
+/// Security type enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum SecurityType {
+    Equity,
+    FixedIncome,
+    MutualFund,
+    ETF,
+    Option,
+    Future,
+    Cash,
+    RealEstate,
+    Alternative,
+    Other(String),
+}
+
+/// Asset class enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum AssetClass {
+    DomesticEquity,
+    InternationalEquity,
+    EmergingMarkets,
+    GovernmentBond,
+    CorporateBond,
+    MunicipalBond,
+    HighYield,
+    Cash,
+    RealEstate,
+    Commodity,
+    Hedge,
+    PrivateEquity,
+    Other(String),
+}
+
+/// Represents a price point for a security
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Price {
+    /// Security ID
+    pub security_id: String,
+    
+    /// Price date
+    pub date: NaiveDate,
+    
+    /// Price value
+    pub price: f64,
+    
+    /// Currency code (ISO 4217)
+    pub currency: String,
+    
+    /// Price source
+    pub source: String,
+    
+    /// Price timestamp
+    #[serde(default = "default_created_at")]
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Represents a transaction in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Transaction {
+    /// Unique identifier for the transaction
+    #[serde(default = "generate_id")]
+    pub id: String,
+    
+    /// Account ID this transaction belongs to
+    pub account_id: String,
+    
+    /// Security ID this transaction involves
+    pub security_id: Option<String>,
+    
+    /// Transaction date
+    pub transaction_date: NaiveDate,
+    
+    /// Settlement date
+    pub settlement_date: Option<NaiveDate>,
+    
+    /// Transaction type
+    pub transaction_type: TransactionType,
+    
+    /// Transaction amount
+    pub amount: f64,
+    
+    /// Transaction quantity
+    pub quantity: Option<f64>,
+    
+    /// Transaction price
+    pub price: Option<f64>,
+    
+    /// Transaction fees
+    pub fees: Option<f64>,
+    
+    /// Transaction currency
+    pub currency: String,
+    
+    /// Transaction creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Transaction last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+    
+    /// Additional transaction metadata
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+}
+
+/// Transaction type enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum TransactionType {
+    Buy,
+    Sell,
+    Deposit,
+    Withdrawal,
+    Dividend,
+    Interest,
+    Fee,
+    Transfer,
+    Split,
+    Other(String),
+}
+
+/// Represents a position in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Position {
+    /// Account ID this position belongs to
+    pub account_id: String,
+    
+    /// Security ID this position involves
+    pub security_id: String,
+    
+    /// Position date
+    pub date: NaiveDate,
+    
+    /// Position quantity
+    pub quantity: f64,
+    
+    /// Position market value
+    pub market_value: f64,
+    
+    /// Position cost basis
+    pub cost_basis: Option<f64>,
+    
+    /// Position currency
+    pub currency: String,
+    
+    /// Position creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Position last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Represents a performance metric in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PerformanceMetric {
+    /// Entity ID (Portfolio ID or Account ID)
+    pub entity_id: String,
+    
+    /// Entity type (Portfolio or Account)
+    pub entity_type: EntityType,
+    
+    /// Metric date
+    pub date: NaiveDate,
+    
+    /// Metric period
+    pub period: PerformancePeriod,
+    
+    /// Time-weighted return
+    pub time_weighted_return: Option<f64>,
+    
+    /// Money-weighted return (IRR)
+    pub money_weighted_return: Option<f64>,
+    
+    /// Benchmark return
+    pub benchmark_return: Option<f64>,
+    
+    /// Alpha
+    pub alpha: Option<f64>,
+    
+    /// Beta
+    pub beta: Option<f64>,
+    
+    /// Sharpe ratio
+    pub sharpe_ratio: Option<f64>,
+    
+    /// Sortino ratio
+    pub sortino_ratio: Option<f64>,
+    
+    /// Information ratio
+    pub information_ratio: Option<f64>,
+    
+    /// Tracking error
+    pub tracking_error: Option<f64>,
+    
+    /// Maximum drawdown
+    pub max_drawdown: Option<f64>,
+    
+    /// Metric creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Metric last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Entity type enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum EntityType {
+    Portfolio,
+    Account,
+}
+
+/// Performance period enumeration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum PerformancePeriod {
+    Daily,
+    Weekly,
+    Monthly,
+    Quarterly,
+    YearToDate,
+    OneYear,
+    ThreeYear,
+    FiveYear,
+    TenYear,
+    SinceInception,
+    Custom(String),
+}
+
+/// Represents a benchmark in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Benchmark {
+    /// Unique identifier for the benchmark
+    #[serde(default = "generate_id")]
+    pub id: String,
+    
+    /// Benchmark name
+    pub name: String,
+    
+    /// Benchmark symbol
+    pub symbol: Option<String>,
+    
+    /// Benchmark description
+    pub description: Option<String>,
+    
+    /// Benchmark creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
+    
+    /// Benchmark last updated timestamp
+    #[serde(default = "default_created_at")]
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Represents a benchmark return in the system
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BenchmarkReturn {
+    /// Benchmark ID
+    pub benchmark_id: String,
+    
+    /// Return date
+    pub date: NaiveDate,
+    
+    /// Return period
+    pub period: PerformancePeriod,
+    
+    /// Return value
+    pub return_value: f64,
+    
+    /// Return creation timestamp
+    #[serde(default = "default_created_at")]
+    pub created_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

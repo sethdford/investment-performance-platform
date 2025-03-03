@@ -1,0 +1,39 @@
+{
+  "type": "benchmark",
+  "source": "manual",
+  "data": {
+    "id": "bench-54321",
+    "name": "S&P 500 Index",
+    "symbol": "SPX",
+    "description": "Standard & Poor's 500 Index",
+    "asset_class": "EQUITY",
+    "region": "US",
+    "currency": "USD",
+    "returns": [
+      {
+        "date": "2023-01-31",
+        "return_value": 0.0153
+      },
+      {
+        "date": "2023-02-28",
+        "return_value": -0.0245
+      },
+      {
+        "date": "2023-03-31",
+        "return_value": 0.0321
+      },
+      {
+        "date": "2023-04-30",
+        "return_value": 0.0125
+      },
+      {
+        "date": "2023-05-31",
+        "return_value": -0.0089
+      },
+      {
+        "date": "2023-06-30",
+        "return_value": 0.0278
+      }
+    ]
+  }
+} 

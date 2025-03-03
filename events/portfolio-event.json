@@ -1,0 +1,15 @@
+{
+  "type": "portfolio",
+  "source": "manual",
+  "data": {
+    "id": "port-12345",
+    "name": "John Doe's Investment Portfolio",
+    "client_id": "client-98765",
+    "inception_date": "2020-01-01T00:00:00Z",
+    "base_currency": "USD",
+    "status": "ACTIVE",
+    "description": "Long-term retirement portfolio with moderate risk profile",
+    "benchmark_id": "bench-54321",
+    "manager_id": "mgr-12345"
+  }
+} 

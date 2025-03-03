@@ -20,7 +20,7 @@ Financial services applications must comply with various regulations:
 1. **Data Encryption**
    - Implement encryption at rest for DynamoDB tables
    ```yaml
-   # In template.yaml
+   # In template-production.yaml
    Resources:
      ItemsTable:
        Type: AWS::DynamoDB::Table
@@ -69,7 +69,7 @@ Financial services applications must comply with various regulations:
 1. **Fine-grained IAM Permissions**
    - Use least privilege principle for Lambda roles
    ```yaml
-   # In template.yaml
+   # In template-production.yaml
    ApiHandlerRole:
      Type: AWS::IAM::Role
      Properties:
@@ -97,7 +97,7 @@ Financial services applications must comply with various regulations:
    - Implement OAuth 2.0 or JWT-based authorization
    - Add Cognito User Pools for authentication
    ```yaml
-   # In template.yaml
+   # In template-production.yaml
    ApiGatewayAuthorizer:
      Type: AWS::ApiGateway::Authorizer
      Properties:
@@ -186,7 +186,7 @@ Financial services applications must comply with various regulations:
 1. **VPC Integration**
    - Deploy Lambda functions within a VPC
    ```yaml
-   # In template.yaml
+   # In template-production.yaml
    ApiHandler:
      Type: AWS::Serverless::Function
      Properties:
@@ -202,7 +202,7 @@ Financial services applications must comply with various regulations:
 2. **WAF Integration**
    - Add AWS WAF to API Gateway
    ```yaml
-   # In template.yaml
+   # In template-production.yaml
    ApiGatewayWafAssociation:
      Type: AWS::WAFv2::WebACLAssociation
      Properties:
@@ -223,7 +223,7 @@ Financial services applications must comply with various regulations:
 2. **Backup and Recovery**
    - Enable Point-in-time Recovery for DynamoDB
    ```yaml
-   # In template.yaml
+   # In template-production.yaml
    ItemsTable:
      Type: AWS::DynamoDB::Table
      Properties:

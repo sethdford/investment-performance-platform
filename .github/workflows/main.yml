@@ -1,0 +1,197 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Check formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      
+      - name: Lint with clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+      
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose
+  
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: x86_64-unknown-linux-gnu
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build API Handler
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --package api-handler
+      
+      - name: Build Event Processor
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --package event-processor
+      
+      - name: Build Performance Calculator
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --package performance-calculator
+      
+      - name: Create deployment package
+        run: |
+          mkdir -p dist
+          cp target/release/api-handler dist/bootstrap
+          cd dist && zip -r ../api-handler.zip bootstrap
+          cd ..
+          
+          cp target/release/event-processor dist/bootstrap
+          cd dist && zip -r ../event-processor.zip bootstrap
+          cd ..
+          
+          cp target/release/performance-calculator dist/bootstrap
+          cd dist && zip -r ../performance-calculator.zip bootstrap
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: lambda-functions
+          path: |
+            api-handler.zip
+            event-processor.zip
+            performance-calculator.zip
+  
+  deploy-dev:
+    name: Deploy to Dev
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: lambda-functions
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Deploy to AWS
+        run: |
+          aws s3 mb s3://investment-performance-lambda-code-dev --region us-east-1 || true
+          aws s3 cp api-handler.zip s3://investment-performance-lambda-code-dev/api-handler.zip
+          aws s3 cp event-processor.zip s3://investment-performance-lambda-code-dev/event-processor.zip
+          aws s3 cp performance-calculator.zip s3://investment-performance-lambda-code-dev/performance-calculator.zip
+          
+          aws cloudformation deploy \
+            --template-file infrastructure/cloudformation.yaml \
+            --stack-name investment-performance-dev \
+            --parameter-overrides \
+              Environment=dev \
+              ApiHandlerFunctionS3Key=api-handler.zip \
+              EventProcessorFunctionS3Key=event-processor.zip \
+              PerformanceCalculatorFunctionS3Key=performance-calculator.zip \
+              LambdaCodeS3Bucket=investment-performance-lambda-code-dev \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --region us-east-1
+  
+  deploy-prod:
+    name: Deploy to Production
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: lambda-functions
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Deploy to AWS
+        run: |
+          aws s3 mb s3://investment-performance-lambda-code-prod --region us-east-1 || true
+          aws s3 cp api-handler.zip s3://investment-performance-lambda-code-prod/api-handler.zip
+          aws s3 cp event-processor.zip s3://investment-performance-lambda-code-prod/event-processor.zip
+          aws s3 cp performance-calculator.zip s3://investment-performance-lambda-code-prod/performance-calculator.zip
+          
+          aws cloudformation deploy \
+            --template-file infrastructure/cloudformation.yaml \
+            --stack-name investment-performance-prod \
+            --parameter-overrides \
+              Environment=prod \
+              ApiHandlerFunctionS3Key=api-handler.zip \
+              EventProcessorFunctionS3Key=event-processor.zip \
+              PerformanceCalculatorFunctionS3Key=performance-calculator.zip \
+              LambdaCodeS3Bucket=investment-performance-lambda-code-prod \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --region us-east-1 

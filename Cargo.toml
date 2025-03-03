@@ -2,6 +2,9 @@
 members = [
     "api-handler",
     "event-processor",
-    "shared"
+    "shared",
+    "data-ingestion",
+    "performance-calculator",
+    "graphql-api"
 ]
 resolver = "2" 

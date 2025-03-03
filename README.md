@@ -1,182 +1,109 @@
-# Rust SAM Application
+# Investment Performance Calculator
 
-A serverless application built with Rust and AWS SAM (Serverless Application Model).
+A serverless Rust application for calculating investment portfolio performance metrics.
 
-## Architecture Overview
+## Overview
 
-This application implements a serverless microservices architecture with the following components:
+The Investment Performance Calculator is a high-performance, scalable system built on AWS serverless architecture. It provides APIs for managing investment portfolios, items, and transactions, and calculates various performance metrics such as Time-Weighted Return (TWR), Money-Weighted Return (MWR), volatility, Sharpe ratio, and more.
 
-1. **API Handler** - A Lambda function that processes API Gateway requests for CRUD operations on items
-2. **Event Processor** - A Lambda function that processes events from SQS for asynchronous workflows
-3. **Shared Library** - Common code shared between the Lambda functions
+## Architecture
 
-### Data Flow
+The application follows a serverless, event-driven architecture:
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  API Gateway │────▶│  API Handler │────▶│  DynamoDB   │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │  SQS Queue  │────▶│Event Processor│
-                    └─────────────┘     └─────────────┘
-```
+- **API Handler**: AWS Lambda function that processes API requests
+- **Event Processor**: AWS Lambda function that processes events from SQS
+- **Performance Calculator**: AWS Lambda function that calculates performance metrics
+- **Data Storage**: DynamoDB for entity data and Timestream for time-series metrics
+- **Message Queue**: SQS for asynchronous processing
 
-## Project Structure
+## Features
 
-```
-rust-sam/
-├── api-handler/           # API Gateway Lambda handler
-│   ├── src/
-│   │   ├── main.rs        # Main entry point for API handler
-│   │   └── tests.rs       # Tests for API handler
-│   └── Cargo.toml         # API handler dependencies
-├── event-processor/       # SQS event processor Lambda
-│   ├── src/
-│   │   ├── main.rs        # Main entry point for event processor
-│   │   └── tests.rs       # Tests for event processor
-│   └── Cargo.toml         # Event processor dependencies
-├── shared/                # Shared code library
-│   ├── src/
-│   │   ├── lib.rs         # Library entry point
-│   │   ├── models.rs      # Data models
-│   │   ├── repository.rs  # DynamoDB repository
-│   │   ├── error.rs       # Error handling
-│   │   ├── config.rs      # Configuration
-│   │   └── tests.rs       # Tests for shared library
-│   └── Cargo.toml         # Shared library dependencies
-├── events/                # Test event payloads
-│   └── test/              # Test events for local testing
-├── template.yaml         # SAM template
-└── README.md             # This file
-```
+- Portfolio management (create, read, update, delete)
+- Item management within portfolios
+- Transaction recording and management
+- Performance calculation with various methodologies
+- Batch calculation for multiple portfolios
+- Time series data for historical performance
+- Multi-tenant support with data isolation
+- Caching for improved performance
+- Comprehensive error handling and logging
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) (1.70.0 or later)
-- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-- [Docker](https://docs.docker.com/get-docker/) (for local testing)
-- [AWS CLI](https://aws.amazon.com/cli/) (configured with appropriate credentials)
+- Rust 1.70 or later
+- AWS CLI
+- Terraform or AWS CloudFormation
+- Make
 
-### Local Development
+### Installation
 
-1. **Clone the repository**
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/investment-performance-calculator.git
+   cd investment-performance-calculator
+   ```
 
-```bash
-git clone https://github.com/yourusername/rust-sam.git
-cd rust-sam
+2. Build the application:
+   ```
+   make build
+   ```
+
+3. Deploy to AWS:
+   ```
+   make deploy-dev
+   ```
+
+## Documentation
+
+- [User Guide](docs/user-guide.md): Guide for API users
+- [Developer Guide](docs/developer-guide.md): Guide for developers
+- [API Reference](docs/api_reference.md): API documentation
+- [Security Hardening Guide](docs/security-hardening-guide.md): Security best practices
+- [Disaster Recovery Plan](docs/disaster-recovery-plan.md): Procedures for disaster recovery
+- [Cost Optimization Guide](docs/cost-optimization-guide.md): Cost optimization recommendations
+
+## Development
+
+### Project Structure
+
+```
+.
+├── api-handler/            # API Handler Lambda function
+├── event-processor/        # Event Processor Lambda function
+├── performance-calculator/ # Performance Calculator Lambda function
+├── shared/                 # Shared code and utilities
+├── infrastructure/         # Infrastructure as Code (Terraform, CloudFormation)
+├── scripts/                # Utility scripts
+├── docs/                   # Documentation
+└── tests/                  # Tests
 ```
 
-2. **Build the application**
+### Building
 
-```bash
-sam build
+```
+make build
 ```
 
-3. **Run locally**
+### Testing
 
-```bash
-sam local start-api
+```
+make test
 ```
 
-4. **Test the API**
+### Deploying
 
-```bash
-# List all items
-curl http://localhost:3000/items
-
-# Create a new item
-curl -X POST http://localhost:3000/items \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test Item","description":"This is a test item"}'
-
-# Get a specific item
-curl http://localhost:3000/items/{id}
-
-# Delete an item
-curl -X DELETE http://localhost:3000/items/{id}
+```
+make deploy-dev    # Deploy to development environment
+make deploy-test   # Deploy to test environment
+make deploy-prod   # Deploy to production environment
 ```
 
-### Running Tests
+## License
 
-```bash
-# Run all tests
-cargo test --all
+This project is proprietary and confidential.
 
-# Run tests for a specific component
-cargo test -p api-handler
-cargo test -p event-processor
-cargo test -p shared
-```
+## Contact
 
-## Deployment
-
-1. **Build the application**
-
-```bash
-sam build
-```
-
-2. **Deploy to AWS**
-
-```bash
-sam deploy --guided
-```
-
-Follow the prompts to configure your deployment.
-
-## Testing with Sample Events
-
-You can use the provided sample events to test your Lambda functions:
-
-```bash
-# Test the API handler
-sam local invoke ApiHandler -e events/test/get-items.json
-sam local invoke ApiHandler -e events/test/get-item.json
-sam local invoke ApiHandler -e events/test/create-item.json
-sam local invoke ApiHandler -e events/test/delete-item.json
-
-# Test the event processor
-sam local invoke EventProcessor -e events/test/sqs-event.json
-```
-
-## Code Structure and Design
-
-### API Handler
-
-The API handler processes HTTP requests from API Gateway and performs CRUD operations on items:
-
-- `GET /items` - List all items
-- `GET /items/{id}` - Get a specific item
-- `POST /items` - Create a new item
-- `DELETE /items/{id}` - Delete an item
-
-When items are created or deleted, events are published to an SQS queue for asynchronous processing.
-
-### Event Processor
-
-The event processor consumes events from the SQS queue and performs additional processing based on the event type:
-
-- `Created` - Process item creation events
-- `Updated` - Process item update events
-- `Deleted` - Process item deletion events
-
-### Shared Library
-
-The shared library contains common code used by both Lambda functions:
-
-- `models.rs` - Data models for items and events
-- `repository.rs` - DynamoDB repository for data access
-- `error.rs` - Error handling
-- `config.rs` - Configuration management
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Commit your changes (`git commit -am 'Add my feature'`)
-4. Push to the branch (`git push origin feature/my-feature`)
-5. Create a new Pull Request 
+For questions or support, please contact [your-email@example.com](mailto:your-email@example.com). 
