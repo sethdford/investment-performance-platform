@@ -838,6 +838,8 @@ mod tests {
             updated_at: chrono::Utc::now(),
             status: crate::models::Status::Active,
             metadata: HashMap::new(),
+            holdings: Vec::new(),
+            transactions: Vec::new(),
         };
         
         // Create the mock repository
