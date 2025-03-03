@@ -1,4 +1,4 @@
-# Investment Performance Calculator
+# Investment Performance Platform
 
 A serverless Rust application for calculating investment portfolio performance metrics.
 
