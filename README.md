@@ -1,4 +1,4 @@
-# Modern Conversational Financial Advisor
+# Modern Investment Management Platform
 
 A modern investment management platform powered by a human-level conversational financial advisor using emerging AI techniques.
 
