@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use async_trait::async_trait;
+use tracing::{info, warn, error};
 
 use crate::calculations::audit::AuditTrail;
-use crate::calculations::distributed_cache::Cache;
+use crate::calculations::distributed_cache::StringCache;
 
 /// Configuration for the Integration module
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,7 +146,7 @@ impl Default for WebhookConfig {
 }
 
 /// Webhook endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WebhookEndpoint {
     /// Endpoint URL
     pub url: String,
@@ -329,7 +330,7 @@ pub struct IntegrationEngine {
     /// Configuration
     config: IntegrationConfig,
     /// Cache for integration results
-    cache: Arc<dyn Cache + Send + Sync>,
+    cache: Arc<dyn StringCache + Send + Sync>,
     /// Audit trail
     audit_trail: Arc<dyn AuditTrail + Send + Sync>,
     /// Notification service
@@ -375,6 +376,14 @@ impl NotificationService for DefaultNotificationService {
                 notification.recipients.join(",")
             ),
             result: format!("email_sent"),
+            tenant_id: "default".to_string(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "email_notification".to_string(),
+            resource_id: "email".to_string(),
+            resource_type: "notification".to_string(),
+            operation: "send".to_string(),
+            details: format!("Email sent to {} recipients", notification.recipients.len()),
+            status: "success".to_string(),
         }).await?;
         
         Ok(())
@@ -422,6 +431,14 @@ impl NotificationService for DefaultNotificationService {
                 matching_webhooks.len()
             ),
             result: format!("webhook_sent"),
+            tenant_id: "default".to_string(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "webhook_notification".to_string(),
+            resource_id: "webhook".to_string(),
+            resource_type: "notification".to_string(),
+            operation: "send".to_string(),
+            details: format!("Webhook sent to {} endpoints", matching_webhooks.len()),
+            status: "success".to_string(),
         }).await?;
         
         Ok(())
@@ -429,13 +446,16 @@ impl NotificationService for DefaultNotificationService {
 }
 
 /// Default API client implementation
+#[derive(Clone)]
 pub struct DefaultApiClient {
     /// Configuration
     config: IntegrationConfig,
     /// Audit trail
     audit_trail: Arc<dyn AuditTrail + Send + Sync>,
     /// OAuth2 tokens
-    oauth2_tokens: RwLock<HashMap<String, (String, DateTime<Utc>)>>,
+    oauth2_tokens: Arc<RwLock<HashMap<String, (String, DateTime<Utc>)>>>,
+    /// Cache for integration results
+    cache: Arc<dyn StringCache + Send + Sync>,
 }
 
 #[async_trait]
@@ -468,6 +488,14 @@ impl ApiClient for DefaultApiClient {
                 endpoint_config.url
             ),
             result: format!("mock_response"),
+            tenant_id: "default".to_string(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "api_request".to_string(),
+            resource_id: request.endpoint_id.clone(),
+            resource_type: "api_endpoint".to_string(),
+            operation: "send".to_string(),
+            details: format!("API request sent to {}", endpoint_config.url),
+            status: "success".to_string(),
         }).await?;
         
         // Return mock response
@@ -531,6 +559,14 @@ impl ApiClient for DefaultApiClient {
                         token_url
                     ),
                     result: format!("token_generated"),
+                    tenant_id: "default".to_string(),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    event_type: "oauth2_token".to_string(),
+                    resource_id: endpoint_id.to_string(),
+                    resource_type: "oauth2_token".to_string(),
+                    operation: "get".to_string(),
+                    details: format!("OAuth2 token generated"),
+                    status: "success".to_string(),
                 }).await?;
                 
                 Ok(token)
@@ -544,7 +580,7 @@ impl IntegrationEngine {
     /// Create a new integration engine
     pub fn new(
         config: IntegrationConfig,
-        cache: Arc<dyn Cache + Send + Sync>,
+        cache: Arc<dyn StringCache + Send + Sync>,
         audit_trail: Arc<dyn AuditTrail + Send + Sync>,
     ) -> Self {
         // Create default notification service
@@ -557,11 +593,16 @@ impl IntegrationEngine {
         let api_client = Box::new(DefaultApiClient {
             config: config.clone(),
             audit_trail: audit_trail.clone(),
-            oauth2_tokens: RwLock::new(HashMap::new()),
+            oauth2_tokens: Arc::new(RwLock::new(HashMap::new())),
+            cache: cache.clone(),
         });
         
-        // Use the API client as the data import service as well
-        let data_import_service = api_client.clone() as Box<dyn DataImportService>;
+        // Create data import service
+        let data_import_service = Box::new(DefaultDataImportService {
+            config: config.clone(),
+            audit_trail: audit_trail.clone(),
+            import_history: RwLock::new(Vec::new()),
+        });
         
         Self {
             config,
@@ -581,33 +622,42 @@ impl IntegrationEngine {
             return Err(anyhow!("Integration module is not enabled"));
         }
         
-        // Create cache key
-        let cache_key = format!(
-            "integration:email:{}:{}",
-            notification.subject,
-            notification.recipients.join(",")
-        );
-        
         // Try to get from cache (to avoid duplicate emails)
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<bool>(&cache_key).await? {
-                // Record cache hit in audit trail
-                self.audit_trail.record(crate::calculations::audit::AuditRecord {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: Utc::now(),
-                    entity_id: "email".to_string(),
-                    entity_type: "notification".to_string(),
-                    action: "send_email_cache_hit".to_string(),
-                    user_id: "system".to_string(),
-                    parameters: format!(
-                        "subject={},recipients={}",
-                        notification.subject,
-                        notification.recipients.join(",")
-                    ),
-                    result: format!("email_already_sent"),
-                }).await?;
-                
-                return Ok(());
+            let cache_key = format!("email:{}:{}:{}", 
+                notification.subject,
+                notification.recipients.join(","),
+                request_id
+            );
+            
+            if let Some(cached_result) = self.cache.get_string(&cache_key).await? {
+                if cached_result == "sent" {
+                    // Record cache hit in audit trail
+                    self.audit_trail.record(crate::calculations::audit::AuditRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        timestamp: Utc::now(),
+                        entity_id: "email".to_string(),
+                        entity_type: "notification".to_string(),
+                        action: "send_email_cache_hit".to_string(),
+                        user_id: "system".to_string(),
+                        parameters: format!(
+                            "subject={},recipients={}",
+                            notification.subject,
+                            notification.recipients.join(",")
+                        ),
+                        result: format!("email_already_sent"),
+                        event_id: uuid::Uuid::new_v4().to_string(),
+                        event_type: "cache_hit".to_string(),
+                        resource_id: cache_key.clone(),
+                        resource_type: "email".to_string(),
+                        operation: "get".to_string(),
+                        details: format!("Email already sent: {}", notification.subject),
+                        status: "success".to_string(),
+                        tenant_id: "default".to_string(),
+                    }).await?;
+                    
+                    return Ok(());
+                }
             }
         }
         
@@ -616,7 +666,13 @@ impl IntegrationEngine {
         
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &true, Some(self.config.cache_ttl_seconds)).await?;
+            let cache_key = format!("email:{}:{}:{}", 
+                notification.subject,
+                notification.recipients.join(","),
+                request_id
+            );
+            
+            self.cache.set_string(cache_key.clone(), "sent".to_string(), Some(self.config.cache_ttl_seconds)).await?;
         }
         
         Ok(())
@@ -629,32 +685,42 @@ impl IntegrationEngine {
             return Err(anyhow!("Integration module is not enabled"));
         }
         
-        // Create cache key
-        let cache_key = format!(
-            "integration:webhook:{}:{}",
-            notification.event_type,
-            serde_json::to_string(&notification.data)?
-        );
-        
         // Try to get from cache (to avoid duplicate webhooks)
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<bool>(&cache_key).await? {
-                // Record cache hit in audit trail
-                self.audit_trail.record(crate::calculations::audit::AuditRecord {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: Utc::now(),
-                    entity_id: "webhook".to_string(),
-                    entity_type: "notification".to_string(),
-                    action: "send_webhook_cache_hit".to_string(),
-                    user_id: "system".to_string(),
-                    parameters: format!(
-                        "event_type={}",
-                        notification.event_type
-                    ),
-                    result: format!("webhook_already_sent"),
-                }).await?;
-                
-                return Ok(());
+            let cache_key = format!("webhook:{}:{}:{}", 
+                notification.event_type,
+                serde_json::to_string(&notification.data)?,
+                request_id
+            );
+            
+            if let Some(cached_result) = self.cache.get_string(&cache_key).await? {
+                if cached_result == "sent" {
+                    // Record cache hit in audit trail
+                    self.audit_trail.record(crate::calculations::audit::AuditRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        timestamp: Utc::now(),
+                        entity_id: "webhook".to_string(),
+                        entity_type: "notification".to_string(),
+                        action: "send_webhook_cache_hit".to_string(),
+                        user_id: "system".to_string(),
+                        parameters: format!(
+                            "event_type={},target_webhooks={:?}",
+                            notification.event_type,
+                            notification.target_webhooks
+                        ),
+                        result: format!("webhook_already_sent"),
+                        event_id: uuid::Uuid::new_v4().to_string(),
+                        event_type: "cache_hit".to_string(),
+                        resource_id: cache_key.clone(),
+                        resource_type: "webhook".to_string(),
+                        operation: "get".to_string(),
+                        details: format!("Webhook already sent: {}", notification.event_type),
+                        status: "success".to_string(),
+                        tenant_id: "default".to_string(),
+                    }).await?;
+                    
+                    return Ok(());
+                }
             }
         }
         
@@ -663,7 +729,13 @@ impl IntegrationEngine {
         
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &true, Some(self.config.cache_ttl_seconds)).await?;
+            let cache_key = format!("webhook:{}:{}:{}", 
+                notification.event_type,
+                serde_json::to_string(&notification.data)?,
+                request_id
+            );
+            
+            self.cache.set_string(cache_key.clone(), "sent".to_string(), Some(self.config.cache_ttl_seconds)).await?;
         }
         
         Ok(())
@@ -681,18 +753,17 @@ impl IntegrationEngine {
             return Err(anyhow!("API endpoint not found: {}", request.endpoint_id));
         }
         
-        // Create cache key
-        let cache_key = format!(
-            "integration:api:{}:{}:{}:{}",
-            request.endpoint_id,
-            request.method,
-            request.path,
-            serde_json::to_string(&request.body)?
-        );
-        
         // Try to get from cache
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<ApiResponse>(&cache_key).await? {
+            let cache_key = format!("api_request:{}:{}:{}:{}:{}", 
+                request.endpoint_id,
+                request.method,
+                request.path,
+                serde_json::to_string(&request.query_params)?,
+                request_id
+            );
+            
+            if let Some(cached_json) = self.cache.get_string(&cache_key).await? {
                 // Record cache hit in audit trail
                 self.audit_trail.record(crate::calculations::audit::AuditRecord {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -702,14 +773,25 @@ impl IntegrationEngine {
                     action: "api_request_cache_hit".to_string(),
                     user_id: "system".to_string(),
                     parameters: format!(
-                        "method={},path={}",
+                        "method={},path={},endpoint={}",
                         request.method,
-                        request.path
+                        request.path,
+                        request.endpoint_id
                     ),
                     result: format!("cached_result_found"),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    event_type: "cache_hit".to_string(),
+                    resource_id: cache_key.clone(),
+                    resource_type: "api_request".to_string(),
+                    operation: "get".to_string(),
+                    details: format!("API request cache hit: {}", request.endpoint_id),
+                    status: "success".to_string(),
+                    tenant_id: "default".to_string(),
                 }).await?;
                 
-                return Ok(cached_result);
+                // Deserialize the cached response
+                let response: ApiResponse = serde_json::from_str(&cached_json)?;
+                return Ok(response);
             }
         }
         
@@ -718,7 +800,17 @@ impl IntegrationEngine {
         
         // Cache the result if successful
         if self.config.enable_caching && response.status_code >= 200 && response.status_code < 300 {
-            self.cache.set(&cache_key, &response, Some(self.config.cache_ttl_seconds)).await?;
+            let cache_key = format!("api_request:{}:{}:{}:{}:{}", 
+                request.endpoint_id,
+                request.method,
+                request.path,
+                serde_json::to_string(&request.query_params)?,
+                request_id
+            );
+            
+            // Serialize the response
+            let serialized = serde_json::to_string(&response)?;
+            self.cache.set_string(cache_key.clone(), serialized, Some(self.config.cache_ttl_seconds)).await?;
         }
         
         // Record in audit trail
@@ -735,6 +827,14 @@ impl IntegrationEngine {
                 request.path
             ),
             result: format!("status_code={}", response.status_code),
+            tenant_id: "default".to_string(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "api_request".to_string(),
+            resource_id: request.endpoint_id.clone(),
+            resource_type: "api_endpoint".to_string(),
+            operation: "send".to_string(),
+            details: format!("API request completed with status {}", response.status_code),
+            status: if response.status_code >= 200 && response.status_code < 300 { "success" } else { "failure" }.to_string(),
         }).await?;
         
         Ok(response)
@@ -782,8 +882,8 @@ impl IntegrationEngine {
             user_id: "system".to_string(),
             parameters: format!(
                 "import_type={},format={}",
-                request.import_type,
-                request.format
+                request.import_type.clone(),
+                request.format.clone()
             ),
             result: format!(
                 "records_processed={},records_imported={},records_with_errors={}",
@@ -791,6 +891,14 @@ impl IntegrationEngine {
                 result.records_imported,
                 result.records_with_errors
             ),
+            tenant_id: "default".to_string(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "data_import".to_string(),
+            resource_id: result.import_id.clone(),
+            resource_type: "import_job".to_string(),
+            operation: "import".to_string(),
+            details: format!("Data import completed with {} records processed", result.records_processed),
+            status: if result.records_with_errors == 0 { "success" } else { "partial_success" }.to_string(),
         }).await?;
         
         Ok(result)
@@ -836,109 +944,6 @@ impl IntegrationEngine {
     }
 }
 
-/// Default API client implementation for send_request
-#[async_trait]
-impl ApiClient for DefaultApiClient {
-    async fn send_request(&self, request: ApiRequest) -> Result<ApiResponse> {
-        // Check if integration is enabled
-        if !self.config.enabled {
-            return Err(anyhow!("Integration is not enabled"));
-        }
-        
-        // Get endpoint configuration
-        let endpoint_config = self.config.api_endpoints.get(&request.endpoint_id)
-            .ok_or_else(|| anyhow!("API endpoint not found: {}", request.endpoint_id))?;
-        
-        // In a real implementation, this would use an HTTP client
-        // For demonstration, we'll return a mock response
-        
-        // Record in audit trail
-        self.audit_trail.record(crate::calculations::audit::AuditRecord {
-            id: uuid::Uuid::new_v4().to_string(),
-            timestamp: Utc::now(),
-            entity_id: request.endpoint_id.clone(),
-            entity_type: "api_request".to_string(),
-            action: "send_request".to_string(),
-            user_id: "system".to_string(),
-            parameters: format!(
-                "method={},path={},url={}",
-                request.method,
-                request.path,
-                endpoint_config.url
-            ),
-            result: format!("mock_response"),
-        }).await?;
-        
-        // Return mock response
-        Ok(ApiResponse {
-            status_code: 200,
-            headers: HashMap::new(),
-            body: Some(serde_json::json!({
-                "success": true,
-                "message": "Mock response",
-                "data": {
-                    "request_id": uuid::Uuid::new_v4().to_string(),
-                    "timestamp": Utc::now().to_rfc3339(),
-                }
-            })),
-            error: None,
-        })
-    }
-    
-    async fn get_oauth2_token(&self, endpoint_id: &str) -> Result<String> {
-        // Check if integration is enabled
-        if !self.config.enabled {
-            return Err(anyhow!("Integration is not enabled"));
-        }
-        
-        // Get endpoint configuration
-        let endpoint_config = self.config.api_endpoints.get(endpoint_id)
-            .ok_or_else(|| anyhow!("API endpoint not found: {}", endpoint_id))?;
-        
-        // Check if endpoint uses OAuth2
-        match &endpoint_config.auth_type {
-            AuthType::OAuth2 { client_id, client_secret, token_url, scope } => {
-                // Check if we have a valid token
-                let mut tokens = self.oauth2_tokens.write().await;
-                if let Some((token, expiry)) = tokens.get(endpoint_id) {
-                    if expiry > &Utc::now() {
-                        return Ok(token.clone());
-                    }
-                }
-                
-                // In a real implementation, this would request a new token
-                // For demonstration, we'll return a mock token
-                
-                // Generate mock token
-                let token = format!("mock_token_{}", uuid::Uuid::new_v4());
-                let expiry = Utc::now() + chrono::Duration::hours(1);
-                
-                // Store token
-                tokens.insert(endpoint_id.to_string(), (token.clone(), expiry));
-                
-                // Record in audit trail
-                self.audit_trail.record(crate::calculations::audit::AuditRecord {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: Utc::now(),
-                    entity_id: endpoint_id.to_string(),
-                    entity_type: "oauth2_token".to_string(),
-                    action: "get_oauth2_token".to_string(),
-                    user_id: "system".to_string(),
-                    parameters: format!(
-                        "client_id={},token_url={}",
-                        client_id,
-                        token_url
-                    ),
-                    result: format!("token_generated"),
-                }).await?;
-                
-                Ok(token)
-            },
-            _ => Err(anyhow!("Endpoint does not use OAuth2: {}", endpoint_id)),
-        }
-    }
-}
-
 /// Default data import service implementation
 pub struct DefaultDataImportService {
     /// Configuration
@@ -967,6 +972,10 @@ impl DataImportService for DefaultDataImportService {
         
         // Generate import ID
         let import_id = uuid::Uuid::new_v4().to_string();
+        
+        // Store request fields before they're moved
+        let import_type = request.import_type.clone();
+        let format = request.format.clone();
         
         // Create mock result
         let result = DataImportResult {
@@ -999,8 +1008,8 @@ impl DataImportService for DefaultDataImportService {
             user_id: "system".to_string(),
             parameters: format!(
                 "import_type={},format={}",
-                request.import_type,
-                request.format
+                import_type,
+                format
             ),
             result: format!(
                 "records_processed={},records_imported={},records_with_errors={}",
@@ -1008,6 +1017,14 @@ impl DataImportService for DefaultDataImportService {
                 result.records_imported,
                 result.records_with_errors
             ),
+            tenant_id: "default".to_string(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "data_import".to_string(),
+            resource_id: result.import_id.clone(),
+            resource_type: "import_job".to_string(),
+            operation: "import".to_string(),
+            details: format!("Data import completed with {} records processed", result.records_processed),
+            status: if result.records_with_errors == 0 { "success" } else { "partial_success" }.to_string(),
         }).await?;
         
         Ok(result)
@@ -1048,93 +1065,5 @@ impl DataImportService for DefaultDataImportService {
             .ok_or_else(|| anyhow!("Import not found: {}", import_id))?;
         
         Ok(result)
-    }
-}
-
-// Fix the implementation for DefaultApiClient as DataImportService
-#[async_trait]
-impl DataImportService for DefaultApiClient {
-    async fn import_data(&self, request: DataImportRequest) -> Result<DataImportResult> {
-        // Check if integration is enabled
-        if !self.config.enabled {
-            return Err(anyhow!("Integration is not enabled"));
-        }
-        
-        // Check if data import is enabled
-        if !self.config.data_import.enabled {
-            return Err(anyhow!("Data import is not enabled"));
-        }
-        
-        // In a real implementation, this would parse and import the data
-        // For demonstration, we'll return a mock result
-        
-        // Generate import ID
-        let import_id = uuid::Uuid::new_v4().to_string();
-        
-        // Create mock result
-        let result = DataImportResult {
-            import_id,
-            import_type: request.import_type,
-            records_processed: 100,
-            records_imported: 95,
-            records_with_errors: 5,
-            errors: vec![
-                "Invalid data format in row 10".to_string(),
-                "Missing required field in row 25".to_string(),
-                "Duplicate record in row 42".to_string(),
-                "Invalid date format in row 67".to_string(),
-                "Value out of range in row 89".to_string(),
-            ],
-            timestamp: Utc::now(),
-        };
-        
-        // Record in audit trail
-        self.audit_trail.record(crate::calculations::audit::AuditRecord {
-            id: uuid::Uuid::new_v4().to_string(),
-            timestamp: Utc::now(),
-            entity_id: result.import_id.clone(),
-            entity_type: "data_import".to_string(),
-            action: "import_data".to_string(),
-            user_id: "system".to_string(),
-            parameters: format!(
-                "import_type={},format={}",
-                request.import_type,
-                request.format
-            ),
-            result: format!(
-                "records_processed={},records_imported={},records_with_errors={}",
-                result.records_processed,
-                result.records_imported,
-                result.records_with_errors
-            ),
-        }).await?;
-        
-        Ok(result)
-    }
-    
-    async fn get_import_history(&self) -> Result<Vec<DataImportResult>> {
-        // In a real implementation, this would retrieve the import history
-        // For demonstration, we'll return an empty list
-        Ok(Vec::new())
-    }
-    
-    async fn get_import_details(&self, import_id: &str) -> Result<DataImportResult> {
-        // In a real implementation, this would retrieve the import details
-        // For demonstration, we'll return a mock result
-        Ok(DataImportResult {
-            import_id: import_id.to_string(),
-            import_type: "mock_import".to_string(),
-            records_processed: 100,
-            records_imported: 95,
-            records_with_errors: 5,
-            errors: vec![
-                "Invalid data format in row 10".to_string(),
-                "Missing required field in row 25".to_string(),
-                "Duplicate record in row 42".to_string(),
-                "Invalid date format in row 67".to_string(),
-                "Value out of range in row 89".to_string(),
-            ],
-            timestamp: Utc::now(),
-        })
     }
 } 

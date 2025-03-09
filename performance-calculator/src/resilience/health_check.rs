@@ -40,9 +40,18 @@ pub struct HealthCheckResult {
     
     /// Additional details
     pub details: Option<String>,
+
+    /// Error details if check failed
+    pub error: Option<String>,
     
     /// Timestamp
     pub timestamp: Instant,
+
+    /// Number of consecutive failures
+    pub consecutive_failures: u32,
+
+    /// Number of consecutive successes 
+    pub consecutive_successes: u32,
 }
 
 /// Health check configuration
@@ -202,14 +211,14 @@ impl HealthCheckRegistry {
                 };
                 
                 for (service_name, health_check) in health_checks_clone.iter() {
-                    let status = match time::timeout(
+                    let (status, error) = match time::timeout(
                         Duration::from_secs(config.timeout_seconds),
                         health_check.check_health(),
                     ).await {
-                        Ok(status) => status,
+                        Ok(status) => (status, None),
                         Err(_) => {
                             warn!("Health check for {} timed out", service_name);
-                            HealthStatus::Unhealthy
+                            (HealthStatus::Unhealthy, Some("Health check timed out".to_string()))
                         },
                     };
                     
@@ -218,16 +227,42 @@ impl HealthCheckRegistry {
                     
                     let mut results = results.lock().unwrap();
                     
+                    let mut consecutive_failures = 0;
+                    let mut consecutive_successes = 0;
+                    
+                    if let Some(prev_result) = results.get(service_name) {
+                        consecutive_failures = prev_result.consecutive_failures;
+                        consecutive_successes = prev_result.consecutive_successes;
+                    }
+                    
+                    match status {
+                        HealthStatus::Healthy => {
+                            consecutive_successes += 1;
+                            consecutive_failures = 0;
+                        }
+                        HealthStatus::Unhealthy => {
+                            consecutive_failures += 1;
+                            consecutive_successes = 0;
+                        }
+                        HealthStatus::Degraded => {
+                            // Keep existing counts for degraded state
+                        }
+                    }
+                    
                     let result = HealthCheckResult {
                         service_name: service_name.clone(),
                         status,
                         details,
+                        error,
                         timestamp,
+                        consecutive_failures,
+                        consecutive_successes,
                     };
                     
                     results.insert(service_name.clone(), result);
                     
-                    info!("Health check for {}: {}", service_name, status);
+                    info!("Health check for {}: {} (failures: {}, successes: {})", 
+                        service_name, status, consecutive_failures, consecutive_successes);
                 }
             }
         });
@@ -304,7 +339,7 @@ impl DynamoDbHealthCheck {
 #[async_trait]
 impl HealthCheck for DynamoDbHealthCheck {
     fn service_name(&self) -> &str {
-        "DynamoDB"
+        "dynamodb"
     }
     
     async fn check_health(&self) -> HealthStatus {
@@ -312,11 +347,25 @@ impl HealthCheck for DynamoDbHealthCheck {
             .table_name(&self.table_name)
             .send()
             .await {
-                Ok(_) => HealthStatus::Healthy,
-                Err(e) => {
-                    error!("DynamoDB health check failed: {}", e);
-                    HealthStatus::Unhealthy
-                },
+                Ok(response) => {
+                    match response.table() {
+                        Some(table) => {
+                            match table.table_status() {
+                                Some(status) => {
+                                    match status {
+                                        aws_sdk_dynamodb::types::TableStatus::Active => HealthStatus::Healthy,
+                                        aws_sdk_dynamodb::types::TableStatus::Creating => HealthStatus::Degraded,
+                                        aws_sdk_dynamodb::types::TableStatus::Updating => HealthStatus::Degraded,
+                                        _ => HealthStatus::Unhealthy
+                                    }
+                                }
+                                None => HealthStatus::Unhealthy
+                            }
+                        }
+                        None => HealthStatus::Unhealthy
+                    }
+                }
+                Err(_) => HealthStatus::Unhealthy
             }
     }
     
@@ -344,24 +393,31 @@ impl SqsHealthCheck {
 #[async_trait]
 impl HealthCheck for SqsHealthCheck {
     fn service_name(&self) -> &str {
-        "SQS"
+        "sqs"
     }
     
     async fn check_health(&self) -> HealthStatus {
         match self.client.get_queue_attributes()
             .queue_url(&self.queue_url)
-            .attribute_names(aws_sdk_sqs::model::QueueAttributeName::All)
+            .attribute_names(aws_sdk_sqs::types::QueueAttributeName::All)
             .send()
             .await {
-                Ok(_) => HealthStatus::Healthy,
-                Err(e) => {
-                    error!("SQS health check failed: {}", e);
-                    HealthStatus::Unhealthy
-                },
+                Ok(response) => {
+                    if let Some(attrs) = response.attributes() {
+                        if attrs.contains_key(&aws_sdk_sqs::types::QueueAttributeName::QueueArn) {
+                            HealthStatus::Healthy
+                        } else {
+                            HealthStatus::Degraded
+                        }
+                    } else {
+                        HealthStatus::Unhealthy
+                    }
+                }
+                Err(_) => HealthStatus::Unhealthy
             }
     }
     
     fn details(&self) -> Option<String> {
-        Some(format!("Queue: {}", self.queue_url))
+        Some(format!("Queue URL: {}", self.queue_url))
     }
 } 

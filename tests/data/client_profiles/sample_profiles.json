@@ -1,0 +1,188 @@
+[
+  {
+    "id": "client-001",
+    "name": "John Smith",
+    "age": 35,
+    "risk_tolerance": "moderate",
+    "financial_goals": [
+      {
+        "type": "retirement",
+        "target_amount": 2000000,
+        "target_date": "2050-01-01",
+        "priority": "high"
+      },
+      {
+        "type": "education",
+        "target_amount": 150000,
+        "target_date": "2035-01-01",
+        "priority": "medium"
+      }
+    ],
+    "assets": [
+      {
+        "type": "cash",
+        "amount": 50000,
+        "account_type": "savings"
+      },
+      {
+        "type": "investment",
+        "amount": 100000,
+        "account_type": "401k"
+      },
+      {
+        "type": "investment",
+        "amount": 25000,
+        "account_type": "roth_ira"
+      }
+    ],
+    "liabilities": [
+      {
+        "type": "mortgage",
+        "amount": 300000,
+        "interest_rate": 3.5
+      },
+      {
+        "type": "student_loan",
+        "amount": 20000,
+        "interest_rate": 4.5
+      }
+    ],
+    "income": {
+      "annual_salary": 120000,
+      "bonus": 15000,
+      "other_income": 5000
+    },
+    "expenses": {
+      "housing": 2500,
+      "transportation": 500,
+      "food": 800,
+      "utilities": 300,
+      "entertainment": 400,
+      "other": 1000
+    }
+  },
+  {
+    "id": "client-002",
+    "name": "Jane Doe",
+    "age": 55,
+    "risk_tolerance": "conservative",
+    "financial_goals": [
+      {
+        "type": "retirement",
+        "target_amount": 1500000,
+        "target_date": "2030-01-01",
+        "priority": "high"
+      },
+      {
+        "type": "travel",
+        "target_amount": 50000,
+        "target_date": "2025-01-01",
+        "priority": "medium"
+      }
+    ],
+    "assets": [
+      {
+        "type": "cash",
+        "amount": 100000,
+        "account_type": "savings"
+      },
+      {
+        "type": "investment",
+        "amount": 500000,
+        "account_type": "401k"
+      },
+      {
+        "type": "investment",
+        "amount": 150000,
+        "account_type": "traditional_ira"
+      },
+      {
+        "type": "real_estate",
+        "amount": 400000,
+        "account_type": "primary_residence"
+      }
+    ],
+    "liabilities": [
+      {
+        "type": "mortgage",
+        "amount": 100000,
+        "interest_rate": 3.0
+      }
+    ],
+    "income": {
+      "annual_salary": 150000,
+      "bonus": 30000,
+      "other_income": 10000
+    },
+    "expenses": {
+      "housing": 2000,
+      "transportation": 600,
+      "food": 1000,
+      "utilities": 400,
+      "entertainment": 500,
+      "other": 1500
+    }
+  },
+  {
+    "id": "client-003",
+    "name": "Michael Johnson",
+    "age": 28,
+    "risk_tolerance": "aggressive",
+    "financial_goals": [
+      {
+        "type": "home_purchase",
+        "target_amount": 100000,
+        "target_date": "2025-01-01",
+        "priority": "high"
+      },
+      {
+        "type": "retirement",
+        "target_amount": 3000000,
+        "target_date": "2060-01-01",
+        "priority": "medium"
+      }
+    ],
+    "assets": [
+      {
+        "type": "cash",
+        "amount": 30000,
+        "account_type": "savings"
+      },
+      {
+        "type": "investment",
+        "amount": 50000,
+        "account_type": "401k"
+      },
+      {
+        "type": "investment",
+        "amount": 15000,
+        "account_type": "roth_ira"
+      }
+    ],
+    "liabilities": [
+      {
+        "type": "student_loan",
+        "amount": 50000,
+        "interest_rate": 5.0
+      },
+      {
+        "type": "credit_card",
+        "amount": 5000,
+        "interest_rate": 18.0
+      }
+    ],
+    "income": {
+      "annual_salary": 90000,
+      "bonus": 10000,
+      "other_income": 0
+    },
+    "expenses": {
+      "housing": 1800,
+      "transportation": 400,
+      "food": 600,
+      "utilities": 200,
+      "entertainment": 500,
+      "other": 800
+    }
+  }
+] 

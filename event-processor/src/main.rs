@@ -54,12 +54,11 @@ struct AuditRecord {
     details: Option<String>,
 }
 
-#[derive(Clone)]
 struct EventProcessor {
     dynamodb_client: DynamoDbClient,
     sqs_client: SqsClient,
     dynamodb_repository: DynamoDbRepository,
-    timestream_repository: TimestreamRepository,
+    timestream_repository: Arc<TimestreamRepository>,
 }
 
 impl EventProcessor {
@@ -73,7 +72,7 @@ impl EventProcessor {
         
         let database_name = env::var("TIMESTREAM_DATABASE").unwrap_or_else(|_| "performance_metrics".to_string());
         let table_name = env::var("TIMESTREAM_TABLE").unwrap_or_else(|_| "portfolio_metrics".to_string());
-        let timestream_repository = TimestreamRepository::new(database_name, table_name);
+        let timestream_repository = Arc::new(TimestreamRepository::new(database_name, table_name));
         
         Ok(Self {
             dynamodb_client,
@@ -235,6 +234,17 @@ impl EventProcessor {
             .map_err(|e| Error::from(format!("Failed to process batch calculation: {}", e)))?;
 
         Ok(result)
+    }
+}
+
+impl Clone for EventProcessor {
+    fn clone(&self) -> Self {
+        Self {
+            dynamodb_client: self.dynamodb_client.clone(),
+            sqs_client: self.sqs_client.clone(),
+            dynamodb_repository: self.dynamodb_repository.clone(),
+            timestream_repository: self.timestream_repository.clone(),
+        }
     }
 }
 

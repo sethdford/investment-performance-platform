@@ -1,144 +1,144 @@
-# 🚀 Rust Investment Performance Calculator
+# Modern Conversational Financial Advisor
 
-A high-performance, scalable system for calculating investment portfolio performance metrics, built with Rust and AWS serverless architecture.
+A modern investment management platform powered by a human-level conversational financial advisor using emerging AI techniques.
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/yourusername/investment-performance-calculator)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+## Overview
 
-## 📋 Overview
+This platform combines advanced financial modeling with state-of-the-art conversational AI to provide a comprehensive investment management solution. The system is designed to help financial advisors and individuals manage their investments more effectively, optimize tax strategies, and plan for financial goals.
 
-The Rust Investment Performance Calculator provides a comprehensive platform for calculating and analyzing investment performance metrics for portfolios, accounts, and securities. It leverages the performance and safety of Rust along with the scalability of AWS serverless architecture.
+## Key Features
 
-### Architecture Diagram
+### Conversational Financial Advisor
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│             │     │             │     │             │
-│    Client   │────▶│ API Gateway │────▶│ API Handler │
-│             │     │             │     │             │
-└─────────────┘     └─────────────┘     └──────┬──────┘
-                                               │
-                                               ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│             │     │             │     │             │
-│  Timestream │◀────│ Performance │◀────│     SQS     │
-│             │     │ Calculator  │     │             │
-└─────────────┘     └─────────────┘     └──────┬──────┘
-                                               │
-                                               ▼
-                                        ┌─────────────┐
-                                        │             │
-                                        │  DynamoDB   │
-                                        │             │
-                                        └─────────────┘
-```
+- **Human-like Conversations**: Engage in natural, contextually-aware conversations about financial topics
+- **Enhanced Context Management**: Intelligently manages conversation context to maintain coherent and relevant discussions
+  - Context window management with token-based pruning
+  - Context relevance scoring based on topics and entities
+  - Context persistence with file-based storage
+- **Topic Detection**: Automatically identifies financial topics in conversations
+- **Entity Extraction**: Recognizes financial entities like accounts, amounts, and instruments
+- **Persistence**: Saves and loads conversation context across sessions
 
-## ✨ Key Features
+### Financial Planning and Analysis
 
-- **Portfolio Management**: Create, read, update, delete portfolios and their components
-- **Performance Metrics**: Calculate TWR, MWR, volatility, Sharpe ratio, and more
-- **Risk Analysis**: Calculate VaR, Expected Shortfall, and other risk metrics
-- **Benchmark Comparison**: Compare portfolio performance against benchmarks
-- **Multi-Currency Support**: Handle investments in different currencies
-- **Multi-Tenant Architecture**: Secure isolation between tenants
-- **Distributed Caching**: Improve performance with caching
-- **Audit Trail**: Track all operations for compliance and debugging
+- **Portfolio Management**: Create and manage model portfolios with sophisticated asset allocation
+- **Tax Optimization**: Implement tax-efficient strategies including tax-loss harvesting
+- **Retirement Planning**: Plan for retirement with dynamic withdrawal strategies and Monte Carlo simulations
+- **Goal-based Planning**: Set and track financial goals with personalized recommendations
 
-## 🏁 Quick Start
+### Technical Capabilities
+
+- **AWS Bedrock Integration**: Leverages Claude 3 Sonnet for advanced NLP capabilities
+- **Knowledge Retrieval**: Accesses a comprehensive financial knowledge base for accurate information
+- **Context Window Management**: Intelligently manages the LLM context window for optimal performance
+- **Relevance Scoring**: Prioritizes the most relevant information for generating responses
+
+## Architecture
+
+The platform is built with a modular architecture that separates concerns and allows for easy extension:
+
+- **Conversation Module**: Manages conversations, context, and topic detection
+- **Financial Entities Module**: Handles entity extraction and financial data
+- **Financial Advisor Module**: Provides advanced NLP and financial knowledge capabilities
+- **Portfolio Module**: Manages investment portfolios and asset allocation
+- **Performance Calculator**: Calculates and analyzes investment performance
+- **Factor Model**: Implements factor-based analysis and asset allocation
+
+## Getting Started
 
 ### Prerequisites
 
 - Rust 1.70 or later
-- AWS CLI
-- Docker
-- Make
+- AWS account with Bedrock access (for enhanced NLP capabilities)
+- AWS credentials configured locally
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/investment-performance-calculator.git
-cd investment-performance-calculator
+1. Clone the repository:
+   ```
+   git clone https://github.com/example/modern-conversational-advisor.git
+   cd modern-conversational-advisor
+   ```
 
-# Build the application
-cargo build
+2. Build the project:
+   ```
+   cargo build --release
+   ```
 
-# Run tests
-cargo test --all
+### Running the Application
 
-# Deploy to AWS
-make deploy-dev
+Run the main application:
+```
+cargo run --release
 ```
 
-For more detailed instructions, see the [Developer Quickstart Guide](docs/developer_quickstart.md).
-
-## 📊 API Usage
-
-```bash
-# Create a portfolio
-curl -X POST https://api.example.com/v1/portfolios \
-  -H "Authorization: Bearer <your_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My Portfolio",
-    "description": "My investment portfolio",
-    "base_currency": "USD"
-  }'
-
-# Calculate portfolio performance
-curl -X POST https://api.example.com/v1/portfolios/{portfolio_id}/performance \
-  -H "Authorization: Bearer <your_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "start_date": "2023-01-01",
-    "end_date": "2023-12-31",
-    "metrics": ["twr", "mwr", "volatility", "sharpe_ratio"]
-  }'
+Or with basic mode (no LLM):
+```
+cargo run --release -- --basic
 ```
 
-For more API examples, see the [API Reference](docs/api_reference.md).
+### Examples
 
-## 📚 Documentation
+The project includes several examples to demonstrate key features:
 
-### Core Documentation
-- [Platform Overview](docs/platform_overview.md): Comprehensive overview of the platform
-- [Technical Architecture](docs/technical_architecture.md): Detailed technical architecture
-- [Consolidated Documentation](docs/consolidated_documentation.md): All-in-one documentation reference
+- **Financial Advisor Demo**: Demonstrates the core financial advisor capabilities
+  ```
+  cargo run --example financial_advisor_demo
+  ```
 
-### Developer Resources
-- [Developer Quickstart](docs/developer_quickstart.md): Quick guide for new developers
-- [Developer Guide](docs/developer-guide.md): Comprehensive guide for developers
-- [API Reference](docs/api_reference.md): Detailed API documentation
-- [Future Roadmap](docs/future_roadmap.md): Planned improvements and enhancements
+- **Context Management Demo**: Showcases the enhanced context management features
+  ```
+  cargo run --example context_management_demo
+  ```
 
-### User Resources
-- [User Guide](docs/user-guide.md): Guide for API users
+## Development
 
-### Operations Resources
-- [Security Hardening Guide](docs/security-hardening-guide.md): Security best practices
-- [Disaster Recovery Plan](docs/disaster-recovery-plan.md): Procedures for disaster recovery
-- [Cost Optimization Guide](docs/cost-optimization-guide.md): Cost optimization recommendations
+### Project Structure
 
-## 🧪 Testing
+- `src/`: Main source code
+  - `conversation/`: Conversation management and context tracking
+  - `financial_entities/`: Financial entity extraction and management
+  - `financial_advisor/`: Advanced NLP and financial knowledge capabilities
+  - `portfolio/`: Portfolio management and investment tracking
+  - `factor_model/`: Factor model analysis and asset allocation
+  - `performance_calculator/`: Performance calculation and analysis
+  - `common/`: Common utilities and shared resources
+  - `visualization/`: Visualization tools and utilities
 
-The application includes comprehensive tests for all components:
+- `examples/`: Example applications demonstrating key features
+- `tests/`: Integration and unit tests
+- `docs/`: Documentation files
 
-```bash
-# Run all tests
-cargo test --all
+### Running Tests
 
-# Run tests for a specific component
-cargo test -p performance-calculator
+```
+cargo test
 ```
 
-## 🤝 Contributing
+## Documentation
 
-Contributions are welcome! Please read the [Contributing Guide](CONTRIBUTING.md) for more information.
+Comprehensive documentation is available in the `docs/` directory:
 
-## 📝 License
+- [Vision and Mission](VISION.md): Our vision, mission, and strategic focus areas
+- [Enhanced Context Management](docs/ENHANCED_CONTEXT_MANAGEMENT.md): Details on the context management system
+- [Conversation Storage Implementation](docs/CONVERSATION_STORAGE_IMPLEMENTATION.md): Information on conversation persistence
+- [Financial Knowledge Base](docs/FINANCIAL_KNOWLEDGE_BASE.md): Documentation on the financial knowledge system
 
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
+## Recent Improvements
 
-## 📧 Contact
+- **Enhanced Context Management**: Implemented advanced context management with token-based pruning, relevance scoring, and persistence
+- **Consolidated Architecture**: Streamlined the codebase by consolidating the financial advisor and conversational advisor components
+- **Improved Error Handling**: Enhanced error handling throughout the application for better reliability
+- **Better Documentation**: Added comprehensive documentation for all major components
 
-For questions or support, please contact [your-email@example.com](mailto:your-email@example.com). 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the planned features and enhancements.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 

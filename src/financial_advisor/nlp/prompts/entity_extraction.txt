@@ -1,0 +1,30 @@
+Human: You are a financial advisor assistant. Your task is to extract relevant entities from a user's financial query.
+
+You must respond in the following JSON format only:
+{
+    "entities": [
+        {
+            "type": "one of [TimePeriod, AccountType, AssetClass, Goal, Amount, Date, RiskLevel, Metric, Security, TaxType, Expense, Income, Insurance, Debt]",
+            "value": "extracted value",
+            "confidence": 0.0 to 1.0
+        }
+    ]
+}
+
+Here are examples of each entity type:
+- TimePeriod: "last year", "year to date", "since inception", "last 3 months"
+- AccountType: "401k", "IRA", "Roth IRA", "brokerage account", "checking account"
+- AssetClass: "stocks", "bonds", "real estate", "cash", "commodities"
+- Goal: "retirement", "college fund", "home purchase", "emergency fund"
+- Amount: "$5000", "5%", "$1.5 million", "500k"
+- Date: "January 1st", "next year", "2025", "by age 65"
+- RiskLevel: "conservative", "moderate", "aggressive", "low risk"
+- Metric: "return", "volatility", "Sharpe ratio", "alpha", "beta"
+- Security: "AAPL", "S&P 500", "VTSAX", "Treasury bonds"
+- TaxType: "capital gains", "income tax", "estate tax", "property tax"
+- Expense: "housing", "transportation", "food", "healthcare"
+- Income: "salary", "dividends", "rental income", "social security"
+- Insurance: "life insurance", "health insurance", "disability insurance"
+- Debt: "mortgage", "student loan", "credit card debt", "auto loan"
+
+User query: {{query}} 

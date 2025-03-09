@@ -7,4 +7,84 @@ members = [
     "performance-calculator",
     "graphql-api"
 ]
-resolver = "2" 
+resolver = "2"
+
+[workspace.dependencies]
+lazy_static = "1.4.0"
+
+[package]
+name = "modern-conversational-advisor"
+version = "0.2.0"
+edition = "2021"
+description = "A modern investment management platform powered by a human-level conversational financial advisor using emerging AI techniques"
+authors = ["Open AI Team One"]
+license = "MIT"
+repository = "https://github.com/example/modern-conversational-advisor"
+readme = "README.md"
+keywords = ["finance", "ai", "conversation", "llm", "advisor"]
+categories = ["finance", "artificial-intelligence"]
+
+[dependencies]
+# Core dependencies
+tokio = { version = "1.28", features = ["full"] }
+anyhow = "1.0.75"
+thiserror = "1.0.40"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.4", features = ["v4", "serde"] }
+
+# AWS dependencies for LLM integration
+aws-config = "1.0.1"
+aws-sdk-bedrock = "1.77.0"
+aws-sdk-bedrockruntime = "1.76.0"
+aws-sdk-dynamodb = "1.67.0"
+aws-sdk-sts = "1.62.0"
+aws-smithy-runtime-api = "1.0.1"
+aws-smithy-types = "1.0.1"
+bytes = "1.4.0"
+
+# AI and NLP dependencies
+regex = "1.10.2"
+lru = "0.12.0"
+futures-util = "0.3.31"
+ndarray = { version = "0.15.6", features = ["serde"] }
+
+# CLI and UI dependencies
+clap = { version = "4.4.6", features = ["derive"] }
+colored = "2.0.4"
+
+# Logging dependencies
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
+tracing-appender = "0.2.2"
+
+# Async utilities
+async-trait = "0.1.73"
+async-graphql = "5.0.10"
+async-graphql-warp = "5.0.10"
+warp = "0.3.6"
+rust_decimal = "1.32.0"
+
+# Testing utilities
+tempfile = "3.5.0"
+
+[lib]
+name = "investment_management"
+path = "src/lib.rs"
+
+[[bin]]
+name = "financial-advisor"
+path = "src/main.rs"
+
+[[example]]
+name = "financial_advisor_demo"
+path = "examples/financial_advisor_demo.rs"
+
+[[example]]
+name = "context_management_demo"
+path = "examples/context_management_demo.rs"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.5.0" 

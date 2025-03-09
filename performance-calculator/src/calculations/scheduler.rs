@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Utc, NaiveDate, Duration};
+use chrono::{DateTime, Utc, NaiveDate, NaiveDateTime, Duration, Datelike};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -100,7 +100,7 @@ impl ScheduleFrequency {
                 let days_until_target = (*day_of_week + 7 - current_day_of_week) % 7;
                 
                 let target_date = current_time.naive_utc().date()
-                    .checked_add_days(chrono::Days::new(days_until_target)).unwrap();
+                    .checked_add_days(chrono::Days::new(days_until_target.into())).unwrap();
                 let target_time = target_date.and_hms_opt(*hour, *minute, 0).unwrap();
                 let target_datetime = DateTime::<Utc>::from_naive_utc_and_offset(target_time, Utc);
                 
@@ -1109,46 +1109,99 @@ pub trait AwsClient: Send + Sync {
 mod tests {
     use super::*;
     use crate::calculations::audit::InMemoryAuditTrailStorage;
+    use crate::calculations::currency::{ExchangeRateProvider, ExchangeRate, CurrencyCode};
+    use crate::calculations::query_api::{DataAccessService, PortfolioData, PortfolioHoldingsWithReturns, BenchmarkHoldingsWithReturns, HypotheticalTransaction};
+    use crate::calculations::risk_metrics::ReturnSeries;
+    use std::collections::HashMap;
+    use chrono::NaiveDate;
     use mockall::predicate::*;
     use mockall::mock;
     
-    // Mock email client
+    // Mock exchange rate provider for testing
     mock! {
-        EmailClientMock {}
+        ExchangeRateProviderMock {}
         
         #[async_trait::async_trait]
-        impl EmailClient for EmailClientMock {
-            async fn send_email(
+        impl ExchangeRateProvider for ExchangeRateProviderMock {
+            async fn get_exchange_rate(
                 &self,
-                recipients: &[String],
-                subject: &str,
-                body: &str,
-            ) -> Result<()>;
+                base_currency: &CurrencyCode,
+                quote_currency: &CurrencyCode,
+                date: NaiveDate,
+                request_id: &str,
+            ) -> anyhow::Result<ExchangeRate>;
         }
     }
     
-    // Mock AWS client
+    // Mock data access service for testing
     mock! {
-        AwsClientMock {}
+        DataAccessServiceMock {}
         
         #[async_trait::async_trait]
-        impl AwsClient for AwsClientMock {
-            async fn send_sns_message(
+        impl DataAccessService for DataAccessServiceMock {
+            async fn get_portfolio_data(
                 &self,
-                topic_arn: &str,
-                subject: &str,
-                message: &str,
-            ) -> Result<()>;
+                portfolio_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+            ) -> anyhow::Result<PortfolioData>;
             
-            async fn send_sqs_message(
+            async fn get_portfolio_returns(
                 &self,
-                queue_url: &str,
-                message: &str,
-            ) -> Result<()>;
+                portfolio_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+                frequency: &str,
+            ) -> anyhow::Result<HashMap<NaiveDate, f64>>;
+            
+            async fn get_benchmark_returns(
+                &self,
+                benchmark_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+            ) -> anyhow::Result<ReturnSeries>;
+            
+            async fn get_benchmark_returns_by_frequency(
+                &self,
+                benchmark_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+                frequency: &str,
+            ) -> anyhow::Result<ReturnSeries>;
+            
+            async fn get_portfolio_holdings_with_returns(
+                &self,
+                portfolio_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+            ) -> anyhow::Result<PortfolioHoldingsWithReturns>;
+            
+            async fn get_benchmark_holdings_with_returns(
+                &self,
+                benchmark_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+            ) -> anyhow::Result<BenchmarkHoldingsWithReturns>;
+            
+            async fn clone_portfolio_data(
+                &self,
+                source_portfolio_id: &str,
+                target_portfolio_id: &str,
+                start_date: NaiveDate,
+                end_date: NaiveDate,
+            ) -> anyhow::Result<()>;
+            
+            async fn apply_hypothetical_transaction(
+                &self,
+                portfolio_id: &str,
+                transaction: &HypotheticalTransaction,
+            ) -> anyhow::Result<()>;
+            
+            async fn delete_portfolio_data(&self, portfolio_id: &str) -> anyhow::Result<()>;
         }
     }
     
-    // Mock notification service
+    // Mock notification service for testing
     mock! {
         NotificationServiceMock {}
         
@@ -1229,12 +1282,12 @@ mod tests {
         // Create mock query API
         let query_api = Arc::new(crate::calculations::query_api::QueryApi::new(
             audit_manager.clone(),
-            crate::calculations::distributed_cache::CacheFactory::create_mock_cache(),
+            Arc::new(crate::calculations::distributed_cache::CacheFactory::create_in_memory_cache()),
             Arc::new(crate::calculations::currency::CurrencyConverter::new(
-                Arc::new(crate::calculations::currency::MockExchangeRateProviderMock::new()),
+                Arc::new(MockExchangeRateProviderMock::new()),
                 "USD".to_string(),
             )),
-            Arc::new(crate::calculations::query_api::MockDataAccessService),
+            Arc::new(MockDataAccessServiceMock::new()),
         ));
         
         // Create scheduler

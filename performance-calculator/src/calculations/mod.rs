@@ -8,6 +8,7 @@ pub mod config;
 pub mod factory;
 pub mod portfolio;
 pub mod events;
+pub mod cache;
 
 // Performance calculation modules
 pub mod performance_metrics;
@@ -40,10 +41,16 @@ pub mod benchmark_comparison;
 pub mod tests;
 
 // Re-export commonly used items
-pub use performance_metrics::{calculate_twr, calculate_mwr};
-pub use risk_metrics::{calculate_volatility, calculate_sharpe_ratio};
+pub use performance_metrics::calculate_modified_dietz;
+pub use performance_metrics::calculate_irr;
+pub use risk_metrics::calculate_volatility;
+pub use risk_metrics::calculate_sharpe_ratio;
 pub use currency::CurrencyConverter;
-pub use distributed_cache::Cache;
+pub use distributed_cache::{StringCache, BinaryCache, InMemoryCache};
 pub use audit::AuditTrail;
-pub use config::Config;
-pub use factory::ComponentFactory; 
+pub use config::AppConfig as Config;
+pub use factory::ComponentFactory;
+pub use cache::{CalculationCache, create_performance_cache};
+pub mod tenant;
+pub mod twr;
+pub mod factor_model; 

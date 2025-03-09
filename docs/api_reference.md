@@ -1,912 +1,582 @@
-# API Reference
+# Investment Management Platform API Reference
 
-This document provides a comprehensive reference for the Investment Performance Calculator API.
+This document provides a comprehensive reference for the Investment Management Platform API, including client usage, available endpoints, and example code.
 
-## Base URL
+## Table of Contents
 
+1. [API Client](#api-client)
+2. [Portfolio Management API](#portfolio-management-api)
+3. [Tax Optimization API](#tax-optimization-api)
+4. [Household Management API](#household-management-api)
+5. [Charitable Giving API](#charitable-giving-api)
+6. [Risk Analysis API](#risk-analysis-api)
+7. [Performance Analysis API](#performance-analysis-api)
+8. [Error Handling](#error-handling)
+9. [Authentication and Authorization](#authentication-and-authorization)
+
+## API Client
+
+The platform provides a Rust client for interacting with the API. The client handles authentication, request formatting, and response parsing.
+
+### Creating a Client
+
+```rust
+use investment_management::api::Client;
+
+// Create a new API client
+let client = Client::new();
+
+// Create a client with custom configuration
+let client = Client::new_with_config(ClientConfig {
+    base_url: "https://api.example.com".to_string(),
+    timeout: Duration::from_secs(30),
+    max_retries: 3,
+    ..Default::default()
+});
 ```
-https://api.example.com/v1
+
+### Client Configuration
+
+The client can be configured with the following options:
+
+```rust
+pub struct ClientConfig {
+    /// Base URL for the API
+    pub base_url: String,
+    /// Request timeout
+    pub timeout: Duration,
+    /// Maximum number of retries
+    pub max_retries: u32,
+    /// Retry backoff strategy
+    pub retry_strategy: RetryStrategy,
+    /// Authentication configuration
+    pub auth_config: AuthConfig,
+}
 ```
 
-## Authentication
+## Portfolio Management API
 
-All API requests require authentication using a JWT token. Include the token in the `Authorization` header:
+The Portfolio Management API provides endpoints for managing investment portfolios, including model portfolios, accounts, and rebalancing.
 
+### Model Portfolios API
+
+#### Creating a Model Portfolio
+
+```rust
+// Create a model portfolio
+let model = client.models.create(CreateModelParams {
+    name: "Technology Growth".to_string(),
+    securities: [
+        ("AAPL".to_string(), 0.25),
+        ("MSFT".to_string(), 0.25),
+        ("AMZN".to_string(), 0.25),
+        ("GOOGL".to_string(), 0.25),
+    ].iter().cloned().collect(),
+    model_type: ModelType::Direct,
+    ..Default::default()
+}).unwrap();
 ```
-Authorization: Bearer <your_token>
+
+#### Getting a Model Portfolio
+
+```rust
+// Get a model portfolio by ID
+let model = client.models.get("model-123").unwrap();
+```
+
+#### Listing Model Portfolios
+
+```rust
+// List all model portfolios
+let models = client.models.list(None).unwrap();
+
+// List model portfolios with filtering
+let models = client.models.list(Some(ListModelsParams {
+    model_type: Some(ModelType::Direct),
+    limit: Some(10),
+    offset: Some(0),
+    ..Default::default()
+})).unwrap();
+```
+
+#### Updating a Model Portfolio
+
+```rust
+// Update a model portfolio
+let updated_model = client.models.update("model-123", UpdateModelParams {
+    name: Some("Technology Growth V2".to_string()),
+    securities: Some([
+        ("AAPL".to_string(), 0.20),
+        ("MSFT".to_string(), 0.20),
+        ("AMZN".to_string(), 0.20),
+        ("GOOGL".to_string(), 0.20),
+        ("TSLA".to_string(), 0.20),
+    ].iter().cloned().collect()),
+    ..Default::default()
+}).unwrap();
+```
+
+#### Deleting a Model Portfolio
+
+```rust
+// Delete a model portfolio
+client.models.delete("model-123").unwrap();
+```
+
+### Accounts API
+
+#### Creating an Account
+
+```rust
+// Create an account
+let account = client.accounts.create(CreateAccountParams {
+    name: "John Doe's Tech Portfolio".to_string(),
+    owner: "John Doe".to_string(),
+    model_id: "model-123".to_string(),
+    initial_investment: 100000.0,
+    ..Default::default()
+}).unwrap();
+```
+
+#### Getting an Account
+
+```rust
+// Get an account by ID
+let account = client.accounts.get("account-123").unwrap();
+```
+
+#### Listing Accounts
+
+```rust
+// List all accounts
+let accounts = client.accounts.list(None).unwrap();
+
+// List accounts with filtering
+let accounts = client.accounts.list(Some(ListAccountsParams {
+    owner: Some("John Doe".to_string()),
+    limit: Some(10),
+    offset: Some(0),
+    ..Default::default()
+})).unwrap();
+```
+
+#### Updating an Account
+
+```rust
+// Update an account
+let updated_account = client.accounts.update("account-123", UpdateAccountParams {
+    name: Some("John Doe's Tech Portfolio V2".to_string()),
+    model_id: Some("model-456".to_string()),
+    ..Default::default()
+}).unwrap();
+```
+
+#### Deleting an Account
+
+```rust
+// Delete an account
+client.accounts.delete("account-123").unwrap();
+```
+
+### Rebalancing API
+
+#### Generating Rebalance Trades
+
+```rust
+// Generate rebalance trades
+let trades = client.accounts.generate_rebalance_trades(
+    "account-123",
+    Some(RebalanceParams {
+        max_trades: Some(5),
+        tax_aware: true,
+        min_trade_amount: Some(1000.0),
+        drift_threshold: Some(0.02),
+    })
+).unwrap();
+```
+
+#### Executing Trades
+
+```rust
+// Execute trades
+let executed_trades = client.trades.execute(
+    "account-123",
+    trades.iter().map(|t| t.id.clone()).collect(),
+    None
+).unwrap();
+```
+
+## Tax Optimization API
+
+The Tax Optimization API provides endpoints for tax-efficient portfolio management.
+
+### Tax-Loss Harvesting API
+
+#### Generating Tax-Loss Harvesting Trades
+
+```rust
+// Generate tax-loss harvesting trades
+let tlh_trades = client.accounts.generate_algorithmic_tlh_trades(
+    "account-123",
+    Some(TaxOptimizationParams {
+        _enable_tax_loss_harvesting: true,
+        _tax_loss_harvesting_threshold: Some(1000.0),
+        _wash_sale_window_days: Some(30),
+        ..Default::default()
+    })
+).unwrap();
+```
+
+### Tax-Efficient Asset Location API
+
+#### Generating Asset Location Recommendations
+
+```rust
+// Generate asset location recommendations
+let recommendations = client.households.generate_asset_location_recommendations(
+    "household-123"
+).unwrap();
+```
+
+## Household Management API
+
+The Household Management API provides endpoints for managing household-level financial planning.
+
+### Household API
+
+#### Creating a Household
+
+```rust
+// Create a household
+let household = client.households.create_household(
+    "Smith Family",
+    "John Smith"
+).unwrap();
+```
+
+#### Adding a Household Member
+
+```rust
+// Add a household member
+let member = client.households.add_member(
+    &mut household,
+    "Jane Smith",
+    MemberRelationship::Spouse
+).unwrap();
+```
+
+#### Adding an Account to a Household
+
+```rust
+// Add an account to a household
+client.households.add_account(
+    &mut household,
+    account,
+    vec![member.id.clone()],
+    AccountTaxType::Taxable
+).unwrap();
+```
+
+### Financial Goals API
+
+#### Adding a Financial Goal
+
+```rust
+// Add a financial goal
+let goal = client.households.add_financial_goal(
+    &mut household,
+    FinancialGoal {
+        id: "goal-123".to_string(),
+        name: "Retirement".to_string(),
+        goal_type: GoalType::Retirement,
+        target_amount: 1000000.0,
+        current_amount: 100000.0,
+        target_date: NaiveDate::from_ymd_opt(2050, 1, 1).unwrap(),
+        status: GoalStatus::Active,
+        priority: 1,
+        created_at: NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        updated_at: NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        contributions: Vec::new(),
+        linked_accounts: Vec::new(),
+    }
+).unwrap();
+```
+
+#### Tracking Goal Progress
+
+```rust
+// Track goal progress
+let progress = client.households.track_goal_progress(
+    &household,
+    "goal-123"
+).unwrap();
+```
+
+### Withdrawal Planning API
+
+#### Generating a Withdrawal Plan
+
+```rust
+// Generate a withdrawal plan
+let plan = client.households.generate_tax_efficient_withdrawal_plan(
+    &household,
+    50000.0,
+    WithdrawalTimeframe::Annual
+).unwrap();
+```
+
+## Charitable Giving API
+
+The Charitable Giving API provides endpoints for managing charitable giving strategies.
+
+### Charity API
+
+#### Creating a Charity
+
+```rust
+// Create a charity
+let charity = client.households.create_charity(
+    &mut household,
+    "American Red Cross".to_string(),
+    Some("12-3456789".to_string()),
+    "Humanitarian".to_string(),
+    true,
+    None
+);
+```
+
+### Charitable Vehicle API
+
+#### Creating a Charitable Vehicle
+
+```rust
+// Create a charitable vehicle
+let vehicle = client.households.create_charitable_vehicle(
+    &mut household,
+    "Family Donor Advised Fund".to_string(),
+    CharitableVehicleType::DonorAdvisedFund,
+    None,
+    100000.0,
+    10000.0,
+    5000.0,
+    vec![("charity-123".to_string(), 1.0)],
+    None
+).unwrap();
+```
+
+### Donation API
+
+#### Recording a Donation
+
+```rust
+// Record a donation
+let donation = client.households.record_donation(
+    &mut household,
+    "charity-123".to_string(),
+    Some("vehicle-123".to_string()),
+    5000.0,
+    NaiveDate::from_ymd_opt(2023, 9, 1).unwrap(),
+    "Cash".to_string(),
+    None,
+    None,
+    5000.0,
+    2023,
+    true,
+    None
+).unwrap();
+```
+
+#### Analyzing Charitable Tax Impact
+
+```rust
+// Analyze charitable tax impact
+let tax_impact = client.households.analyze_charitable_tax_impact(
+    &household,
+    2023,
+    0.0
+);
+```
+
+#### Generating Donation Strategies
+
+```rust
+// Generate donation strategies
+let strategies = client.households.generate_donation_strategies(
+    &household
+);
+```
+
+## Risk Analysis API
+
+The Risk Analysis API provides endpoints for analyzing portfolio risk.
+
+### Portfolio Risk Analysis API
+
+#### Analyzing Portfolio Risk
+
+```rust
+// Analyze portfolio risk
+let risk_analysis = client.accounts.analyze_risk(
+    "account-123"
+).unwrap();
+```
+
+### Household Risk Analysis API
+
+#### Analyzing Household Risk
+
+```rust
+// Analyze household risk
+let risk_analysis = client.households.analyze_household_risk(
+    &household
+).unwrap();
+```
+
+## Performance Analysis API
+
+The Performance Analysis API provides endpoints for analyzing investment performance.
+
+### Performance Metrics API
+
+#### Calculating Performance Metrics
+
+```rust
+// Calculate performance metrics
+let metrics = client.accounts.calculate_performance_metrics(
+    "account-123",
+    Some(PerformanceParams {
+        start_date: Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()),
+        end_date: Some(NaiveDate::from_ymd_opt(2023, 12, 31).unwrap()),
+        metrics: Some(vec![
+            PerformanceMetric::TWR,
+            PerformanceMetric::MWR,
+            PerformanceMetric::Volatility,
+            PerformanceMetric::SharpeRatio,
+        ]),
+        ..Default::default()
+    })
+).unwrap();
+```
+
+### Performance Attribution API
+
+#### Calculating Performance Attribution
+
+```rust
+// Calculate performance attribution
+let attribution = client.accounts.calculate_performance_attribution(
+    "account-123",
+    Some(AttributionParams {
+        start_date: Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()),
+        end_date: Some(NaiveDate::from_ymd_opt(2023, 12, 31).unwrap()),
+        attribution_type: Some(AttributionType::Factor),
+        ..Default::default()
+    })
+).unwrap();
 ```
 
 ## Error Handling
 
-The API uses standard HTTP status codes to indicate the success or failure of requests:
+The API client returns `Result<T, Error>` for all operations, where `Error` is an enum that represents different types of errors that can occur.
 
-- `200 OK`: The request was successful
-- `201 Created`: The resource was successfully created
-- `400 Bad Request`: The request was invalid
-- `401 Unauthorized`: Authentication failed
-- `403 Forbidden`: The authenticated user doesn't have permission
-- `404 Not Found`: The requested resource was not found
-- `409 Conflict`: The request conflicts with the current state
-- `422 Unprocessable Entity`: Validation error
-- `429 Too Many Requests`: Rate limit exceeded
-- `500 Internal Server Error`: Server error
+```rust
+pub enum Error {
+    /// API error with status code and message
+    Api { status: u16, message: String },
+    /// Network error
+    Network(String),
+    /// Serialization/deserialization error
+    Serialization(String),
+    /// Validation error
+    Validation(String),
+    /// Authentication error
+    Authentication(String),
+    /// Authorization error
+    Authorization(String),
+    /// Rate limit exceeded
+    RateLimit { reset_after: Duration },
+    /// Internal server error
+    Internal(String),
+    /// Unknown error
+    Unknown(String),
+}
+```
 
-Error responses have the following format:
+Example error handling:
 
-```json
-{
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "A human-readable error message",
-    "details": {
-      "field_name": "Specific error for this field"
+```rust
+match client.models.get("model-123") {
+    Ok(model) => {
+        // Handle successful response
+        println!("Model: {:?}", model);
     }
-  },
-  "request_id": "unique-request-identifier"
+    Err(err) => match err {
+        Error::Api { status, message } => {
+            // Handle API error
+            println!("API error ({}): {}", status, message);
+        }
+        Error::Network(msg) => {
+            // Handle network error
+            println!("Network error: {}", msg);
+        }
+        Error::Authentication(msg) => {
+            // Handle authentication error
+            println!("Authentication error: {}", msg);
+        }
+        // Handle other error types
+        _ => println!("Other error: {:?}", err),
+    }
 }
 ```
 
-## Endpoints
+## Authentication and Authorization
 
-### Portfolios
+The API client supports multiple authentication methods:
 
-#### Create Portfolio
+### API Key Authentication
 
-```
-POST /portfolios
-```
-
-Creates a new portfolio.
-
-**Request Body:**
-
-```json
-{
-  "name": "My Portfolio",
-  "description": "My investment portfolio",
-  "currency": "USD",
-  "benchmark_id": "benchmark-456",
-  "tags": ["retirement", "long-term"]
-}
-```
-
-**Response:**
-
-```json
-{
-  "portfolio_id": "portfolio-123",
-  "name": "My Portfolio",
-  "description": "My investment portfolio",
-  "currency": "USD",
-  "benchmark_id": "benchmark-456",
-  "tags": ["retirement", "long-term"],
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-#### Get Portfolio
-
-```
-GET /portfolios/{portfolio_id}
-```
-
-Retrieves a portfolio by ID.
-
-**Response:**
-
-```json
-{
-  "portfolio_id": "portfolio-123",
-  "name": "My Portfolio",
-  "description": "My investment portfolio",
-  "currency": "USD",
-  "benchmark_id": "benchmark-456",
-  "tags": ["retirement", "long-term"],
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-#### Update Portfolio
-
-```
-PUT /portfolios/{portfolio_id}
-```
-
-Updates an existing portfolio.
-
-**Request Body:**
-
-```json
-{
-  "name": "Updated Portfolio Name",
-  "description": "Updated description",
-  "currency": "USD",
-  "benchmark_id": "benchmark-789",
-  "tags": ["retirement", "long-term", "aggressive"]
-}
-```
-
-**Response:**
-
-```json
-{
-  "portfolio_id": "portfolio-123",
-  "name": "Updated Portfolio Name",
-  "description": "Updated description",
-  "currency": "USD",
-  "benchmark_id": "benchmark-789",
-  "tags": ["retirement", "long-term", "aggressive"],
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-02T00:00:00Z"
-}
-```
-
-#### Delete Portfolio
-
-```
-DELETE /portfolios/{portfolio_id}
-```
-
-Deletes a portfolio.
-
-**Response:**
-
-```
-204 No Content
-```
-
-#### List Portfolios
-
-```
-GET /portfolios
-```
-
-Lists all portfolios.
-
-**Query Parameters:**
-
-- `page`: Page number (default: 1)
-- `limit`: Number of items per page (default: 20, max: 100)
-- `sort`: Field to sort by (default: created_at)
-- `order`: Sort order (asc or desc, default: desc)
-- `tag`: Filter by tag
-
-**Response:**
-
-```json
-{
-  "items": [
-    {
-      "portfolio_id": "portfolio-123",
-      "name": "My Portfolio",
-      "description": "My investment portfolio",
-      "currency": "USD",
-      "benchmark_id": "benchmark-456",
-      "tags": ["retirement", "long-term"],
-      "created_at": "2023-01-01T00:00:00Z",
-      "updated_at": "2023-01-01T00:00:00Z"
+```rust
+let client = Client::new_with_config(ClientConfig {
+    auth_config: AuthConfig::ApiKey {
+        key: "your-api-key".to_string(),
     },
-    {
-      "portfolio_id": "portfolio-456",
-      "name": "Another Portfolio",
-      "description": "Another investment portfolio",
-      "currency": "EUR",
-      "benchmark_id": "benchmark-789",
-      "tags": ["short-term", "aggressive"],
-      "created_at": "2023-01-02T00:00:00Z",
-      "updated_at": "2023-01-02T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "total": 42,
-    "page": 1,
-    "limit": 20,
-    "pages": 3
-  }
-}
+    ..Default::default()
+});
 ```
 
-### Items
+### OAuth 2.0 Authentication
 
-#### Create Item
-
-```
-POST /portfolios/{portfolio_id}/items
-```
-
-Creates a new item in a portfolio.
-
-**Request Body:**
-
-```json
-{
-  "name": "Apple Inc.",
-  "symbol": "AAPL",
-  "type": "stock",
-  "description": "Apple Inc. stock",
-  "tags": ["technology", "blue-chip"]
-}
-```
-
-**Response:**
-
-```json
-{
-  "item_id": "item-123",
-  "portfolio_id": "portfolio-123",
-  "name": "Apple Inc.",
-  "symbol": "AAPL",
-  "type": "stock",
-  "description": "Apple Inc. stock",
-  "tags": ["technology", "blue-chip"],
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-#### Get Item
-
-```
-GET /items/{item_id}
-```
-
-Retrieves an item by ID.
-
-**Response:**
-
-```json
-{
-  "item_id": "item-123",
-  "portfolio_id": "portfolio-123",
-  "name": "Apple Inc.",
-  "symbol": "AAPL",
-  "type": "stock",
-  "description": "Apple Inc. stock",
-  "tags": ["technology", "blue-chip"],
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-#### Update Item
-
-```
-PUT /items/{item_id}
-```
-
-Updates an existing item.
-
-**Request Body:**
-
-```json
-{
-  "name": "Apple Inc.",
-  "symbol": "AAPL",
-  "type": "stock",
-  "description": "Updated description",
-  "tags": ["technology", "blue-chip", "dividend"]
-}
-```
-
-**Response:**
-
-```json
-{
-  "item_id": "item-123",
-  "portfolio_id": "portfolio-123",
-  "name": "Apple Inc.",
-  "symbol": "AAPL",
-  "type": "stock",
-  "description": "Updated description",
-  "tags": ["technology", "blue-chip", "dividend"],
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-02T00:00:00Z"
-}
-```
-
-#### Delete Item
-
-```
-DELETE /items/{item_id}
-```
-
-Deletes an item.
-
-**Response:**
-
-```
-204 No Content
-```
-
-#### List Items
-
-```
-GET /portfolios/{portfolio_id}/items
-```
-
-Lists all items in a portfolio.
-
-**Query Parameters:**
-
-- `page`: Page number (default: 1)
-- `limit`: Number of items per page (default: 20, max: 100)
-- `sort`: Field to sort by (default: created_at)
-- `order`: Sort order (asc or desc, default: desc)
-- `type`: Filter by item type
-- `tag`: Filter by tag
-
-**Response:**
-
-```json
-{
-  "items": [
-    {
-      "item_id": "item-123",
-      "portfolio_id": "portfolio-123",
-      "name": "Apple Inc.",
-      "symbol": "AAPL",
-      "type": "stock",
-      "description": "Apple Inc. stock",
-      "tags": ["technology", "blue-chip"],
-      "created_at": "2023-01-01T00:00:00Z",
-      "updated_at": "2023-01-01T00:00:00Z"
+```rust
+let client = Client::new_with_config(ClientConfig {
+    auth_config: AuthConfig::OAuth {
+        client_id: "your-client-id".to_string(),
+        client_secret: "your-client-secret".to_string(),
+        token_url: "https://auth.example.com/token".to_string(),
+        scope: Some("read write".to_string()),
     },
-    {
-      "item_id": "item-456",
-      "portfolio_id": "portfolio-123",
-      "name": "Microsoft Corporation",
-      "symbol": "MSFT",
-      "type": "stock",
-      "description": "Microsoft Corporation stock",
-      "tags": ["technology", "blue-chip"],
-      "created_at": "2023-01-02T00:00:00Z",
-      "updated_at": "2023-01-02T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "total": 42,
-    "page": 1,
-    "limit": 20,
-    "pages": 3
-  }
-}
+    ..Default::default()
+});
 ```
 
-### Transactions
+### JWT Authentication
 
-#### Create Transaction
-
-```
-POST /items/{item_id}/transactions
-```
-
-Creates a new transaction for an item.
-
-**Request Body:**
-
-```json
-{
-  "date": "2023-01-01",
-  "type": "buy",
-  "quantity": 10,
-  "price": 150.00,
-  "currency": "USD",
-  "fees": 7.99,
-  "notes": "Initial purchase"
-}
-```
-
-**Response:**
-
-```json
-{
-  "transaction_id": "transaction-123",
-  "item_id": "item-123",
-  "portfolio_id": "portfolio-123",
-  "date": "2023-01-01",
-  "type": "buy",
-  "quantity": 10,
-  "price": 150.00,
-  "currency": "USD",
-  "fees": 7.99,
-  "notes": "Initial purchase",
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-#### Get Transaction
-
-```
-GET /transactions/{transaction_id}
-```
-
-Retrieves a transaction by ID.
-
-**Response:**
-
-```json
-{
-  "transaction_id": "transaction-123",
-  "item_id": "item-123",
-  "portfolio_id": "portfolio-123",
-  "date": "2023-01-01",
-  "type": "buy",
-  "quantity": 10,
-  "price": 150.00,
-  "currency": "USD",
-  "fees": 7.99,
-  "notes": "Initial purchase",
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-#### Update Transaction
-
-```
-PUT /transactions/{transaction_id}
-```
-
-Updates an existing transaction.
-
-**Request Body:**
-
-```json
-{
-  "date": "2023-01-01",
-  "type": "buy",
-  "quantity": 15,
-  "price": 150.00,
-  "currency": "USD",
-  "fees": 7.99,
-  "notes": "Updated notes"
-}
-```
-
-**Response:**
-
-```json
-{
-  "transaction_id": "transaction-123",
-  "item_id": "item-123",
-  "portfolio_id": "portfolio-123",
-  "date": "2023-01-01",
-  "type": "buy",
-  "quantity": 15,
-  "price": 150.00,
-  "currency": "USD",
-  "fees": 7.99,
-  "notes": "Updated notes",
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-02T00:00:00Z"
-}
-```
-
-#### Delete Transaction
-
-```
-DELETE /transactions/{transaction_id}
-```
-
-Deletes a transaction.
-
-**Response:**
-
-```
-204 No Content
-```
-
-#### List Transactions
-
-```
-GET /items/{item_id}/transactions
-```
-
-Lists all transactions for an item.
-
-**Query Parameters:**
-
-- `page`: Page number (default: 1)
-- `limit`: Number of items per page (default: 20, max: 100)
-- `sort`: Field to sort by (default: date)
-- `order`: Sort order (asc or desc, default: desc)
-- `type`: Filter by transaction type
-- `start_date`: Filter by start date (inclusive)
-- `end_date`: Filter by end date (inclusive)
-
-**Response:**
-
-```json
-{
-  "items": [
-    {
-      "transaction_id": "transaction-123",
-      "item_id": "item-123",
-      "portfolio_id": "portfolio-123",
-      "date": "2023-01-01",
-      "type": "buy",
-      "quantity": 10,
-      "price": 150.00,
-      "currency": "USD",
-      "fees": 7.99,
-      "notes": "Initial purchase",
-      "created_at": "2023-01-01T00:00:00Z",
-      "updated_at": "2023-01-01T00:00:00Z"
+```rust
+let client = Client::new_with_config(ClientConfig {
+    auth_config: AuthConfig::Jwt {
+        token: "your-jwt-token".to_string(),
     },
-    {
-      "transaction_id": "transaction-456",
-      "item_id": "item-123",
-      "portfolio_id": "portfolio-123",
-      "date": "2023-01-15",
-      "type": "buy",
-      "quantity": 5,
-      "price": 155.00,
-      "currency": "USD",
-      "fees": 7.99,
-      "notes": "Additional purchase",
-      "created_at": "2023-01-15T00:00:00Z",
-      "updated_at": "2023-01-15T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "total": 42,
-    "page": 1,
-    "limit": 20,
-    "pages": 3
-  }
-}
+    ..Default::default()
+});
 ```
 
-### Performance
+### AWS IAM Authentication
 
-#### Calculate Performance
-
-```
-POST /portfolios/{portfolio_id}/calculate
-```
-
-Calculates performance metrics for a portfolio.
-
-**Request Body:**
-
-```json
-{
-  "start_date": "2023-01-01",
-  "end_date": "2023-12-31",
-  "benchmark_id": "benchmark-456",
-  "include_details": true
-}
-```
-
-**Response:**
-
-```json
-{
-  "portfolio_id": "portfolio-123",
-  "start_date": "2023-01-01",
-  "end_date": "2023-12-31",
-  "metrics": {
-    "twr": 0.0823,
-    "mwr": 0.0791,
-    "volatility": 0.1245,
-    "sharpe_ratio": 0.6612,
-    "max_drawdown": -0.0512,
-    "benchmark_id": "benchmark-456",
-    "benchmark_return": 0.0712,
-    "tracking_error": 0.0231,
-    "information_ratio": 0.4805
-  },
-  "details": {
-    "time_series": [
-      {
-        "date": "2023-01-31",
-        "twr": 0.0123,
-        "mwr": 0.0119,
-        "volatility": 0.1102,
-        "benchmark_return": 0.0098
-      },
-      {
-        "date": "2023-02-28",
-        "twr": 0.0245,
-        "mwr": 0.0238,
-        "volatility": 0.1125,
-        "benchmark_return": 0.0201
-      }
-    ]
-  },
-  "duration_ms": 1234.56
-}
-```
-
-#### Get Performance
-
-```
-GET /portfolios/{portfolio_id}/performance
-```
-
-Retrieves the latest performance metrics for a portfolio.
-
-**Query Parameters:**
-
-- `start_date`: Start date (required)
-- `end_date`: End date (required)
-- `benchmark_id`: Benchmark ID (optional)
-- `include_details`: Whether to include time series details (default: false)
-
-**Response:**
-
-```json
-{
-  "portfolio_id": "portfolio-123",
-  "start_date": "2023-01-01",
-  "end_date": "2023-12-31",
-  "metrics": {
-    "twr": 0.0823,
-    "mwr": 0.0791,
-    "volatility": 0.1245,
-    "sharpe_ratio": 0.6612,
-    "max_drawdown": -0.0512,
-    "benchmark_id": "benchmark-456",
-    "benchmark_return": 0.0712,
-    "tracking_error": 0.0231,
-    "information_ratio": 0.4805
-  },
-  "details": {
-    "time_series": [
-      {
-        "date": "2023-01-31",
-        "twr": 0.0123,
-        "mwr": 0.0119,
-        "volatility": 0.1102,
-        "benchmark_return": 0.0098
-      },
-      {
-        "date": "2023-02-28",
-        "twr": 0.0245,
-        "mwr": 0.0238,
-        "volatility": 0.1125,
-        "benchmark_return": 0.0201
-      }
-    ]
-  },
-  "last_calculated_at": "2023-12-31T23:59:59Z"
-}
-```
-
-#### Batch Calculate Performance
-
-```
-POST /batch-calculate
-```
-
-Calculates performance metrics for multiple portfolios.
-
-**Request Body:**
-
-```json
-{
-  "portfolio_ids": ["portfolio-123", "portfolio-456"],
-  "start_date": "2023-01-01",
-  "end_date": "2023-12-31",
-  "benchmark_id": "benchmark-789",
-  "include_details": true
-}
-```
-
-**Response:**
-
-```json
-{
-  "results": {
-    "portfolio-123": {
-      "twr": 0.0823,
-      "mwr": 0.0791,
-      "volatility": 0.1245,
-      "sharpe_ratio": 0.6612,
-      "max_drawdown": -0.0512,
-      "benchmark_id": "benchmark-789",
-      "benchmark_return": 0.0712,
-      "tracking_error": 0.0231,
-      "information_ratio": 0.4805,
-      "details": {
-        "time_series": [
-          {
-            "date": "2023-01-31",
-            "twr": 0.0123,
-            "mwr": 0.0119,
-            "volatility": 0.1102,
-            "benchmark_return": 0.0098
-          },
-          {
-            "date": "2023-02-28",
-            "twr": 0.0245,
-            "mwr": 0.0238,
-            "volatility": 0.1125,
-            "benchmark_return": 0.0201
-          }
-        ]
-      }
+```rust
+let client = Client::new_with_config(ClientConfig {
+    auth_config: AuthConfig::AwsIam {
+        region: "us-west-2".to_string(),
+        service: "execute-api".to_string(),
     },
-    "portfolio-456": {
-      "twr": 0.0956,
-      "mwr": 0.0912,
-      "volatility": 0.1356,
-      "sharpe_ratio": 0.7045,
-      "max_drawdown": -0.0478,
-      "benchmark_id": "benchmark-789",
-      "benchmark_return": 0.0712,
-      "tracking_error": 0.0267,
-      "information_ratio": 0.9138,
-      "details": {
-        "time_series": [
-          {
-            "date": "2023-01-31",
-            "twr": 0.0145,
-            "mwr": 0.0139,
-            "volatility": 0.1201,
-            "benchmark_return": 0.0098
-          },
-          {
-            "date": "2023-02-28",
-            "twr": 0.0289,
-            "mwr": 0.0276,
-            "volatility": 0.1234,
-            "benchmark_return": 0.0201
-          }
-        ]
-      }
-    }
-  },
-  "duration_ms": 2345.67
-}
-```
-
-### Benchmarks
-
-#### List Benchmarks
-
-```
-GET /benchmarks
-```
-
-Lists all available benchmarks.
-
-**Query Parameters:**
-
-- `page`: Page number (default: 1)
-- `limit`: Number of items per page (default: 20, max: 100)
-- `sort`: Field to sort by (default: name)
-- `order`: Sort order (asc or desc, default: asc)
-
-**Response:**
-
-```json
-{
-  "items": [
-    {
-      "benchmark_id": "benchmark-123",
-      "name": "S&P 500",
-      "symbol": "SPX",
-      "description": "Standard & Poor's 500 Index",
-      "currency": "USD",
-      "created_at": "2023-01-01T00:00:00Z",
-      "updated_at": "2023-01-01T00:00:00Z"
-    },
-    {
-      "benchmark_id": "benchmark-456",
-      "name": "NASDAQ Composite",
-      "symbol": "IXIC",
-      "description": "NASDAQ Composite Index",
-      "currency": "USD",
-      "created_at": "2023-01-01T00:00:00Z",
-      "updated_at": "2023-01-01T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "total": 42,
-    "page": 1,
-    "limit": 20,
-    "pages": 3
-  }
-}
-```
-
-#### Get Benchmark
-
-```
-GET /benchmarks/{benchmark_id}
-```
-
-Retrieves a benchmark by ID.
-
-**Response:**
-
-```json
-{
-  "benchmark_id": "benchmark-123",
-  "name": "S&P 500",
-  "symbol": "SPX",
-  "description": "Standard & Poor's 500 Index",
-  "currency": "USD",
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z"
-}
-```
-
-## Data Models
-
-### Portfolio
-
-| Field | Type | Description |
-|-------|------|-------------|
-| portfolio_id | string | Unique identifier for the portfolio |
-| name | string | Name of the portfolio |
-| description | string | Description of the portfolio |
-| currency | string | Base currency of the portfolio |
-| benchmark_id | string | ID of the benchmark for the portfolio |
-| tags | array of strings | Tags for the portfolio |
-| created_at | string (ISO 8601) | Creation timestamp |
-| updated_at | string (ISO 8601) | Last update timestamp |
-
-### Item
-
-| Field | Type | Description |
-|-------|------|-------------|
-| item_id | string | Unique identifier for the item |
-| portfolio_id | string | ID of the portfolio the item belongs to |
-| name | string | Name of the item |
-| symbol | string | Symbol of the item |
-| type | string | Type of the item (stock, bond, etc.) |
-| description | string | Description of the item |
-| tags | array of strings | Tags for the item |
-| created_at | string (ISO 8601) | Creation timestamp |
-| updated_at | string (ISO 8601) | Last update timestamp |
-
-### Transaction
-
-| Field | Type | Description |
-|-------|------|-------------|
-| transaction_id | string | Unique identifier for the transaction |
-| item_id | string | ID of the item the transaction belongs to |
-| portfolio_id | string | ID of the portfolio the transaction belongs to |
-| date | string (YYYY-MM-DD) | Date of the transaction |
-| type | string | Type of the transaction (buy, sell, dividend, etc.) |
-| quantity | number | Quantity of the item |
-| price | number | Price per unit |
-| currency | string | Currency of the transaction |
-| fees | number | Fees associated with the transaction |
-| notes | string | Notes for the transaction |
-| created_at | string (ISO 8601) | Creation timestamp |
-| updated_at | string (ISO 8601) | Last update timestamp |
-
-### Performance Metrics
-
-| Field | Type | Description |
-|-------|------|-------------|
-| twr | number | Time-Weighted Return |
-| mwr | number | Money-Weighted Return |
-| volatility | number | Volatility (standard deviation of returns) |
-| sharpe_ratio | number | Sharpe Ratio |
-| max_drawdown | number | Maximum Drawdown |
-| benchmark_id | string | ID of the benchmark |
-| benchmark_return | number | Return of the benchmark |
-| tracking_error | number | Tracking Error |
-| information_ratio | number | Information Ratio |
-
-## Rate Limiting
-
-The API is rate limited to protect against abuse. The current limits are:
-
-- 100 requests per minute per IP address
-- 1000 requests per hour per IP address
-
-Rate limit information is included in the response headers:
-
-- `X-RateLimit-Limit`: The maximum number of requests allowed in the current period
-- `X-RateLimit-Remaining`: The number of requests remaining in the current period
-- `X-RateLimit-Reset`: The time at which the current rate limit window resets (Unix timestamp)
-
-If you exceed the rate limit, you will receive a `429 Too Many Requests` response. 
+    ..Default::default()
+});
+``` 

@@ -1,0 +1,162 @@
+{
+  "name": "Rust-Eze Project Rules",
+  "version": "1.0.0",
+  "description": "Advanced Rust code analysis and correction system with enhanced context-specific error resolution strategies",
+  "author": "Lord Xyn <https://github.com/sethdford/Rust-Eze>",
+  "rules": [
+    {
+      "name": "use-descriptive-variable-names",
+      "description": "Use expressive variable names that convey intent",
+      "pattern": "\\b[a-z]\\b|\\b[a-z][0-9]\\b",
+      "message": "Use descriptive variable names instead of single-letter variables",
+      "severity": "warning",
+      "languages": ["rust"]
+    },
+    {
+      "name": "follow-rust-naming-conventions",
+      "description": "Adhere to Rust's naming conventions",
+      "pattern": "\\b[A-Z][a-z0-9]*[a-z0-9](?<!Type|Impl)\\b(?!::)",
+      "message": "Use snake_case for variables and functions, PascalCase for types and structs",
+      "severity": "warning",
+      "languages": ["rust"]
+    },
+    {
+      "name": "avoid-magic-numbers",
+      "description": "Avoid using magic numbers in code",
+      "pattern": "\\b[0-9][0-9]+\\b",
+      "message": "Replace magic numbers with named constants for improved clarity",
+      "severity": "warning",
+      "languages": ["rust"],
+      "excludePatterns": ["// *", "/* *", "\"*\"", "'*'"]
+    },
+    {
+      "name": "document-public-items",
+      "description": "Document all public items",
+      "pattern": "pub (struct|enum|fn|trait|type|const|mod)\\s+\\w+[^{;]*[{;](?!\\s*//)",
+      "message": "All public items must have doc comments (///)",
+      "severity": "warning",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-result-for-fallible-operations",
+      "description": "Use Result for operations that can fail",
+      "pattern": "fn\\s+\\w+[^{;]*->\\s*(?!Result)[A-Za-z0-9_<>]+\\s*[{;]",
+      "message": "Consider using Result for functions that can fail",
+      "severity": "info",
+      "languages": ["rust"]
+    },
+    {
+      "name": "avoid-unwrap",
+      "description": "Avoid using unwrap() in production code",
+      "pattern": "\\.unwrap\\(\\)",
+      "message": "Avoid using unwrap() in production code; handle errors explicitly",
+      "severity": "warning",
+      "languages": ["rust"],
+      "excludePatterns": ["// *", "/* *", "test"]
+    },
+    {
+      "name": "use-question-mark-operator",
+      "description": "Use ? operator for error propagation",
+      "pattern": "if\\s+\\w+\\.is_err\\(\\)\\s*{[^}]*return",
+      "message": "Use the ? operator for cleaner error propagation",
+      "severity": "suggestion",
+      "languages": ["rust"]
+    },
+    {
+      "name": "prefer-async-await",
+      "description": "Prefer async/await over manual Future handling",
+      "pattern": "\\.and_then\\(|\\bfuture::|\\bFuture\\b",
+      "message": "Consider using async/await for cleaner asynchronous code",
+      "severity": "suggestion",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-tokio-for-async",
+      "description": "Use tokio for async runtime",
+      "pattern": "async fn.*\\{(?!.*tokio)",
+      "message": "Consider using tokio for async runtime management",
+      "severity": "info",
+      "languages": ["rust"]
+    },
+    {
+      "name": "document-unsafe-code",
+      "description": "Document unsafe code blocks",
+      "pattern": "unsafe\\s*\\{(?!\\s*//)",
+      "message": "Document why this unsafe block is necessary and how safety is guaranteed",
+      "severity": "error",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-constants-for-configuration",
+      "description": "Use constants for configuration values",
+      "pattern": "let\\s+\\w+\\s*=\\s*[\"0-9]",
+      "message": "Consider using constants for configuration values",
+      "severity": "suggestion",
+      "languages": ["rust"]
+    },
+    {
+      "name": "implement-error-types",
+      "description": "Implement custom error types",
+      "pattern": "fn\\s+\\w+[^{;]*->\\s*Result<[^,>]*,\\s*(?!\\w+Error)[^>]*>",
+      "message": "Consider implementing a custom error type for this module",
+      "severity": "suggestion",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-structured-concurrency",
+      "description": "Use structured concurrency patterns",
+      "pattern": "tokio::spawn\\(",
+      "message": "Ensure spawned tasks are properly managed with structured concurrency patterns",
+      "severity": "info",
+      "languages": ["rust"]
+    },
+    {
+      "name": "handle-task-cancellation",
+      "description": "Handle task cancellation gracefully",
+      "pattern": "tokio::select!",
+      "message": "Ensure proper cancellation handling in select! blocks",
+      "severity": "info",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-bounded-channels",
+      "description": "Use bounded channels for backpressure",
+      "pattern": "tokio::sync::mpsc::channel\\(\\)",
+      "message": "Consider using bounded channels for better backpressure handling",
+      "severity": "suggestion",
+      "languages": ["rust"]
+    },
+    {
+      "name": "avoid-blocking-in-async",
+      "description": "Avoid blocking operations in async functions",
+      "pattern": "std::(fs|io|process|thread)|::sleep",
+      "message": "Avoid blocking operations in async functions; use async alternatives or spawn_blocking",
+      "severity": "warning",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-async-mutex",
+      "description": "Use async-aware synchronization primitives",
+      "pattern": "std::sync::(Mutex|RwLock)",
+      "message": "Consider using tokio::sync::Mutex or RwLock in async code",
+      "severity": "warning",
+      "languages": ["rust"]
+    },
+    {
+      "name": "implement-timeouts",
+      "description": "Implement timeouts for async operations",
+      "pattern": "\\.(await|wait)\\(\\)",
+      "message": "Consider adding timeouts to async operations with tokio::time::timeout",
+      "severity": "suggestion",
+      "languages": ["rust"]
+    },
+    {
+      "name": "use-tokio-test",
+      "description": "Use tokio test for async tests",
+      "pattern": "#\\[test\\]\\s*async fn",
+      "message": "Use #[tokio::test] for async test functions",
+      "severity": "error",
+      "languages": ["rust"]
+    }
+  ]
+} 

@@ -12,6 +12,7 @@ mod tests {
             created_at: DateTime::parse_from_rfc3339("2023-01-01T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
+            classification: "PUBLIC".to_string(),
         };
 
         let serialized = serde_json::to_string(&item).unwrap();
@@ -21,6 +22,7 @@ mod tests {
         assert_eq!(item.name, deserialized.name);
         assert_eq!(item.description, deserialized.description);
         assert_eq!(item.created_at, deserialized.created_at);
+        assert_eq!(item.classification, deserialized.classification);
     }
 
     #[test]
@@ -32,6 +34,7 @@ mod tests {
             created_at: DateTime::parse_from_rfc3339("2023-01-01T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
+            classification: "PUBLIC".to_string(),
         };
 
         let event = ItemEvent {
@@ -50,6 +53,7 @@ mod tests {
         assert_eq!(item.name, deserialized.item.name);
         assert_eq!(item.description, deserialized.item.description);
         assert_eq!(item.created_at, deserialized.item.created_at);
+        assert_eq!(item.classification, deserialized.item.classification);
         assert_eq!(event.timestamp, deserialized.timestamp);
     }
 

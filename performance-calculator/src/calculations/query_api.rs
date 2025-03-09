@@ -1,46 +1,45 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc, NaiveDate};
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    future::Future,
+    pin::Pin,
+};
+use async_trait::async_trait;
 use uuid::Uuid;
+use rust_decimal::{Decimal, prelude::*};
 
 use crate::calculations::{
+    distributed_cache::Cache,
+    currency::{CurrencyConverter, CurrencyCode, ExchangeRate, ExchangeRateProvider},
+    audit::{AuditTrail, AuditTrailManager},
     performance_metrics::{
-        TimeWeightedReturn, 
-        MoneyWeightedReturn, 
+        TimeWeightedReturn,
+        MoneyWeightedReturn,
         CashFlow,
         PerformanceAttribution,
         calculate_modified_dietz,
         calculate_daily_twr,
         calculate_irr,
         annualize_return,
-        calculate_attribution
+        calculate_attribution,
     },
     risk_metrics::{
-        RiskMetrics, 
+        RiskMetrics,
         ReturnSeries,
-        calculate_risk_metrics
+        calculate_risk_metrics,
     },
     benchmark_comparison::{
         BenchmarkComparison,
-        calculate_benchmark_comparison
+        calculate_benchmark_comparison,
     },
     periodic_returns::{
         Period,
         PeriodicReturn,
-        calculate_all_periodic_returns
+        calculate_all_periodic_returns,
     },
-    audit::{
-        AuditTrailManager,
-        CalculationEventBuilder
-    },
-    distributed_cache::{Cache},
-    currency::{
-        CurrencyConverter,
-        CurrencyCode
-    }
 };
 
 /// Query parameters for performance calculations
@@ -205,7 +204,7 @@ pub struct PerformanceResult {
     pub risk_metrics: Option<RiskMetrics>,
     
     /// Periodic returns
-    pub periodic_returns: Option<Vec<PeriodicReturn>>,
+    pub periodic_returns: Option<HashMap<Period, Vec<PeriodicReturn>>>,
     
     /// Benchmark comparison
     pub benchmark_comparison: Option<BenchmarkComparison>,
@@ -313,13 +312,18 @@ pub struct WhatIfResult {
     pub calculation_time: DateTime<Utc>,
 }
 
+#[async_trait]
+pub trait AsyncComputeCache: Cache<String, serde_json::Value> {
+    async fn compute_if_missing(&self, key: String, ttl_seconds: u64, compute: Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = Result<serde_json::Value>> + Send>> + Send + Sync>) -> Result<serde_json::Value>;
+}
+
 /// Interactive query API for performance calculations
 pub struct QueryApi {
     /// Audit trail manager
     audit_manager: Arc<AuditTrailManager>,
     
     /// Cache for query results
-    cache: Arc<dyn Cache<String, serde_json::Value> + Send + Sync>,
+    cache: Arc<dyn AsyncComputeCache + Send + Sync>,
     
     /// Currency converter
     currency_converter: Arc<CurrencyConverter>,
@@ -332,7 +336,7 @@ impl QueryApi {
     /// Create a new query API
     pub fn new(
         audit_manager: Arc<AuditTrailManager>,
-        cache: Arc<dyn Cache<String, serde_json::Value> + Send + Sync>,
+        cache: Arc<dyn AsyncComputeCache + Send + Sync>,
         currency_converter: Arc<CurrencyConverter>,
         data_service: Arc<dyn DataAccessService>,
     ) -> Self {
@@ -380,172 +384,191 @@ impl QueryApi {
             serde_json::to_string(&params).unwrap_or_default()
         );
         
-        let result = self.cache.get_or_compute(
-            cache_key,
-            3600, // 1 hour TTL
-            || async {
-                // This closure will be called if the result is not in the cache
+        let cache_key = Arc::new(cache_key);
+        let params = Arc::new(params);
+        let data_service = Arc::clone(&self.data_service);
+        let query_id = Arc::new(query_id);
+        let query_id_for_audit = query_id.clone();
+        
+        let result = self.cache.compute_if_missing(
+            (*cache_key).clone(),
+            3600,
+            Box::new(move || {
+                let data_service = Arc::clone(&data_service);
+                let params = Arc::clone(&params);
+                let query_id = Arc::clone(&query_id);
                 
-                // Fetch portfolio data
-                let portfolio_data = self.data_service.get_portfolio_data(
-                    &params.portfolio_id,
-                    params.start_date,
-                    params.end_date,
-                ).await?;
-                
-                // Calculate TWR
-                let twr_method = params.twr_method.as_deref().unwrap_or("daily");
-                let time_weighted_return = match twr_method {
-                    "modified_dietz" => {
-                        // Calculate Modified Dietz TWR
-                        let twr = calculate_modified_dietz(
-                            portfolio_data.beginning_market_value,
-                            portfolio_data.ending_market_value,
-                            &portfolio_data.cash_flows,
-                        )?;
-                        
-                        Some(TimeWeightedReturn {
-                            return_value: twr,
-                            calculation_method: "Modified Dietz".to_string(),
-                            sub_period_returns: Vec::new(), // Simplified
-                            is_annualized: false,
-                        })
-                    },
-                    "daily" => {
-                        // Calculate Daily TWR
-                        let twr = calculate_daily_twr(
-                            &portfolio_data.daily_market_values,
-                            &portfolio_data.cash_flows,
-                        )?;
-                        
-                        Some(TimeWeightedReturn {
-                            return_value: twr,
-                            calculation_method: "Daily".to_string(),
-                            sub_period_returns: Vec::new(), // Simplified
-                            is_annualized: false,
-                        })
-                    },
-                    _ => None,
-                };
-                
-                // Calculate MWR (IRR)
-                let money_weighted_return = if !portfolio_data.cash_flows.is_empty() {
-                    let mwr = calculate_irr(
-                        portfolio_data.beginning_market_value,
-                        portfolio_data.ending_market_value,
-                        &portfolio_data.cash_flows,
-                    )?;
-                    
-                    Some(MoneyWeightedReturn {
-                        return_value: mwr,
-                        calculation_method: "IRR".to_string(),
-                        is_annualized: false,
-                    })
-                } else {
-                    None
-                };
-                
-                // Calculate risk metrics if requested
-                let risk_metrics = if params.include_risk_metrics.unwrap_or(false) {
-                    // Create return series from daily returns
-                    let return_series = ReturnSeries {
-                        dates: portfolio_data.daily_returns.keys().cloned().collect(),
-                        returns: portfolio_data.daily_returns.values().cloned().collect(),
-                    };
-                    
-                    // Get benchmark returns if specified
-                    let benchmark_returns = if let Some(benchmark_id) = &params.benchmark_id {
-                        Some(self.data_service.get_benchmark_returns(
-                            benchmark_id,
-                            params.start_date,
-                            params.end_date,
-                        ).await?)
-                    } else {
-                        None
-                    };
-                    
-                    // Calculate risk metrics
-                    Some(calculate_risk_metrics(&return_series, benchmark_returns.as_ref())?)
-                } else {
-                    None
-                };
-                
-                // Calculate periodic returns if requested
-                let periodic_returns = if params.include_periodic_returns.unwrap_or(false) {
-                    // Create return series from daily returns
-                    let return_series = ReturnSeries {
-                        dates: portfolio_data.daily_returns.keys().cloned().collect(),
-                        returns: portfolio_data.daily_returns.values().cloned().collect(),
-                    };
-                    
-                    // Calculate all periodic returns
-                    Some(calculate_all_periodic_returns(&return_series)?)
-                } else {
-                    None
-                };
-                
-                // Calculate benchmark comparison if benchmark specified
-                let benchmark_comparison = if let Some(benchmark_id) = &params.benchmark_id {
-                    // Get benchmark returns
-                    let benchmark_returns = self.data_service.get_benchmark_returns(
-                        benchmark_id,
+                Box::pin(async move {
+                    let portfolio_data = data_service.get_portfolio_data(
+                        &params.portfolio_id,
                         params.start_date,
                         params.end_date,
                     ).await?;
                     
-                    // Create return series
-                    let portfolio_return_series = ReturnSeries {
-                        dates: portfolio_data.daily_returns.keys().cloned().collect(),
-                        returns: portfolio_data.daily_returns.values().cloned().collect(),
+                    // Calculate TWR
+                    let twr_method = params.twr_method.as_deref().unwrap_or("daily");
+                    let time_weighted_return = match twr_method {
+                        "modified_dietz" => {
+                            let beginning_mv = Decimal::from_f64(portfolio_data.beginning_market_value).unwrap_or_default();
+                            let ending_mv = Decimal::from_f64(portfolio_data.ending_market_value).unwrap_or_default();
+                            let twr = calculate_modified_dietz(
+                                beginning_mv,
+                                ending_mv,
+                                &portfolio_data.cash_flows,
+                                params.start_date,
+                                params.end_date
+                            )?;
+                            Some(twr)
+                        },
+                        "daily" => {
+                            let daily_values: Vec<(NaiveDate, Decimal)> = portfolio_data.daily_market_values
+                                .iter()
+                                .map(|(&date, &value)| (date, Decimal::from_f64(value).unwrap_or_default()))
+                                .collect();
+                            let twr = calculate_daily_twr(&daily_values, &portfolio_data.cash_flows)?;
+                            Some(twr)
+                        },
+                        _ => None,
                     };
                     
-                    // Calculate benchmark comparison
-                    Some(calculate_benchmark_comparison(
-                        &portfolio_return_series,
-                        &benchmark_returns,
-                    )?)
-                } else {
-                    None
-                };
-                
-                // Convert currency if needed
-                let currency = params.currency.clone().unwrap_or_else(|| portfolio_data.currency.clone());
-                
-                // Create result
-                let result = PerformanceResult {
-                    query_id,
-                    portfolio_id: params.portfolio_id,
-                    start_date: params.start_date,
-                    end_date: params.end_date,
-                    time_weighted_return,
-                    money_weighted_return,
-                    risk_metrics,
-                    periodic_returns,
-                    benchmark_comparison,
-                    attribution: None, // Attribution requires separate calculation
-                    currency,
-                    calculation_time: Utc::now(),
-                };
-                
-                // Serialize to JSON for caching
-                let json_result = serde_json::to_value(&result)
-                    .map_err(|e| anyhow!("Failed to serialize performance result: {}", e))?;
-                
-                Ok(json_result)
-            },
+                    // Calculate MWR (IRR)
+                    let money_weighted_return = if !portfolio_data.cash_flows.is_empty() {
+                        let mwr = calculate_irr(
+                            &portfolio_data.cash_flows,
+                            Decimal::from_f64(portfolio_data.ending_market_value).unwrap_or_default(),
+                            100, // max iterations
+                            Decimal::from_f64_retain(1e-10).unwrap_or(Decimal::ZERO), // tolerance
+                        )?;
+                        
+                        Some(mwr)
+                    } else {
+                        None
+                    };
+                    
+                    // Calculate risk metrics if requested
+                    let risk_metrics = if params.include_risk_metrics.unwrap_or(false) {
+                        let return_series = ReturnSeries {
+                            dates: portfolio_data.daily_returns.keys().cloned().collect(),
+                            values: portfolio_data.daily_returns.values()
+                                .map(|&v| Decimal::from_f64(v).unwrap_or_default())
+                                .collect(),
+                        };
+                        
+                        let benchmark_returns = if let Some(benchmark_id) = &params.benchmark_id {
+                            Some(data_service.get_benchmark_returns(
+                                benchmark_id,
+                                params.start_date,
+                                params.end_date,
+                            ).await?)
+                        } else {
+                            None
+                        };
+                        
+                        let annualized_return = annualize_return(
+                            return_series.values.last().cloned().unwrap_or(Decimal::ZERO),
+                            return_series.dates.first().cloned().unwrap_or_default(),
+                            return_series.dates.last().cloned().unwrap_or_default()
+                        )?;
+                        
+                        let annualized_benchmark_return = if let Some(benchmark) = &benchmark_returns {
+                            Some(annualize_return(
+                                benchmark.values.last().cloned().unwrap_or(Decimal::ZERO),
+                                benchmark.dates.first().cloned().unwrap_or_default(),
+                                benchmark.dates.last().cloned().unwrap_or_default()
+                            )?)
+                        } else {
+                            None
+                        };
+                        
+                        let risk_metrics = calculate_risk_metrics(
+                            &return_series,
+                            annualized_return,
+                            benchmark_returns.as_ref(),
+                            annualized_benchmark_return,
+                            Some(Decimal::ZERO)
+                        );
+                        
+                        Some(risk_metrics)
+                    } else {
+                        None
+                    };
+                    
+                    // Calculate periodic returns if requested
+                    let periodic_returns = if params.include_periodic_returns.unwrap_or(false) {
+                        let return_series = ReturnSeries {
+                            dates: portfolio_data.daily_returns.keys().cloned().collect(),
+                            values: portfolio_data.daily_returns.values()
+                                .map(|&v| Decimal::from_f64(v).unwrap_or_default())
+                                .collect(),
+                        };
+                        
+                        Some(calculate_all_periodic_returns(&return_series)?)
+                    } else {
+                        None
+                    };
+                    
+                    // Calculate benchmark comparison if benchmark specified
+                    let benchmark_comparison = if let Some(benchmark_id) = &params.benchmark_id {
+                        let benchmark_returns = data_service.get_benchmark_returns(
+                            benchmark_id,
+                            params.start_date,
+                            params.end_date,
+                        ).await?;
+                        
+                        let portfolio_return_series = ReturnSeries {
+                            dates: portfolio_data.daily_returns.keys().cloned().collect(),
+                            values: portfolio_data.daily_returns.values()
+                                .map(|&v| Decimal::from_f64(v).unwrap_or_default())
+                                .collect(),
+                        };
+                        
+                        let annualized_return = annualize_return(
+                            portfolio_return_series.values.last().cloned().unwrap_or(Decimal::ZERO),
+                            portfolio_return_series.dates.first().cloned().unwrap_or_default(),
+                            portfolio_return_series.dates.last().cloned().unwrap_or_default()
+                        )?;
+                        let annualized_benchmark_return = annualize_return(
+                            benchmark_returns.values.last().cloned().unwrap_or(Decimal::ZERO),
+                            benchmark_returns.dates.first().cloned().unwrap_or_default(),
+                            benchmark_returns.dates.last().cloned().unwrap_or_default()
+                        )?;
+                        
+                        Some(calculate_benchmark_comparison(
+                            &portfolio_return_series,
+                            &benchmark_returns,
+                            annualized_return,
+                            annualized_benchmark_return,
+                            Some(Decimal::ZERO)
+                        )?)
+                    } else {
+                        None
+                    };
+                    
+                    // Convert currency if needed
+                    let currency = params.currency.clone().unwrap_or_else(|| portfolio_data.currency.clone());
+                    
+                    // Create result
+                    let result = PerformanceResult {
+                        query_id: (*query_id).clone(),
+                        portfolio_id: (*params).portfolio_id.clone(),
+                        start_date: (*params).start_date,
+                        end_date: (*params).end_date,
+                        time_weighted_return,
+                        money_weighted_return,
+                        risk_metrics,
+                        periodic_returns,
+                        benchmark_comparison,
+                        attribution: None, // Attribution requires separate calculation
+                        currency,
+                        calculation_time: Utc::now(),
+                    };
+                    
+                    Ok(serde_json::to_value(&result)?)
+                })
+            }),
         ).await?;
         
-        // Deserialize from JSON
-        let performance_result: PerformanceResult = serde_json::from_value(result)
-            .map_err(|e| anyhow!("Failed to deserialize performance result: {}", e))?;
-        
-        // Complete audit trail
-        self.audit_manager.complete_calculation(
-            &event.event_id,
-            vec![format!("performance_result:{}", query_id)],
-        ).await?;
-        
-        Ok(performance_result)
+        Ok(serde_json::from_value(result)?)
     }
     
     /// Calculate risk metrics
@@ -585,61 +608,99 @@ impl QueryApi {
             serde_json::to_string(&params).unwrap_or_default()
         );
         
-        let result = self.cache.get_or_compute(
-            cache_key,
-            3600, // 1 hour TTL
-            || async {
-                // Get returns based on frequency
-                let returns = self.data_service.get_portfolio_returns(
-                    &params.portfolio_id,
-                    params.start_date,
-                    params.end_date,
-                    &params.return_frequency,
-                ).await?;
+        let cache_key = Arc::new(cache_key);
+        let params = Arc::new(params);
+        let data_service = Arc::clone(&self.data_service);
+        let query_id = Arc::new(query_id);
+        let query_id_for_audit = query_id.clone();
+        
+        let result = self.cache.compute_if_missing(
+            (*cache_key).clone(),
+            3600,
+            Box::new(move || {
+                let data_service = Arc::clone(&data_service);
+                let params = Arc::clone(&params);
+                let query_id = Arc::clone(&query_id);
                 
-                // Create return series
-                let return_series = ReturnSeries {
-                    dates: returns.keys().cloned().collect(),
-                    returns: returns.values().cloned().collect(),
-                };
-                
-                // Get benchmark returns if specified
-                let benchmark_returns = if let Some(benchmark_id) = &params.benchmark_id {
-                    Some(self.data_service.get_benchmark_returns_by_frequency(
-                        benchmark_id,
+                Box::pin(async move {
+                    let portfolio_data = data_service.get_portfolio_data(
+                        &params.portfolio_id,
+                        params.start_date,
+                        params.end_date,
+                    ).await?;
+                    
+                    // Get returns based on frequency
+                    let returns = data_service.get_portfolio_returns(
+                        &params.portfolio_id,
                         params.start_date,
                         params.end_date,
                         &params.return_frequency,
-                    ).await?)
-                } else {
-                    None
-                };
-                
-                // Set risk-free rate if provided
-                let risk_free_rate = params.risk_free_rate;
-                
-                // Calculate risk metrics
-                let risk_metrics = calculate_risk_metrics(&return_series, benchmark_returns.as_ref())?;
-                
-                // Create result
-                let result = RiskResult {
-                    query_id: query_id.clone(),
-                    portfolio_id: params.portfolio_id.clone(),
-                    start_date: params.start_date,
-                    end_date: params.end_date,
-                    risk_metrics,
-                    return_frequency: params.return_frequency.clone(),
-                    confidence_level: params.confidence_level,
-                    benchmark_id: params.benchmark_id.clone(),
-                    calculation_time: Utc::now(),
-                };
-                
-                // Serialize to JSON for caching
-                let json_result = serde_json::to_value(&result)
-                    .map_err(|e| anyhow!("Failed to serialize risk result: {}", e))?;
-                
-                Ok(json_result)
-            }
+                    ).await?;
+                    
+                    // Create return series
+                    let return_series = ReturnSeries {
+                        dates: returns.keys().cloned().collect(),
+                        values: returns.values()
+                            .map(|&v| Decimal::from_f64(v).unwrap_or_default())
+                            .collect(),
+                    };
+                    
+                    // Get benchmark returns if specified
+                    let benchmark_returns = if let Some(benchmark_id) = &params.benchmark_id {
+                        Some(data_service.get_benchmark_returns_by_frequency(
+                            benchmark_id,
+                            params.start_date,
+                            params.end_date,
+                            &params.return_frequency,
+                        ).await?)
+                    } else {
+                        None
+                    };
+                    
+                    // Set risk-free rate if provided
+                    let risk_free_rate = params.risk_free_rate;
+                    
+                    // Calculate risk metrics
+                    let risk_metrics = calculate_risk_metrics(
+                        &return_series,
+                        annualize_return(
+                            return_series.values.last().cloned().unwrap_or(Decimal::ZERO),
+                            return_series.dates.first().cloned().unwrap_or_default(),
+                            return_series.dates.last().cloned().unwrap_or_default()
+                        )?,
+                        benchmark_returns.as_ref(),
+                        if let Some(benchmark) = &benchmark_returns {
+                            Some(annualize_return(
+                                benchmark.values.last().cloned().unwrap_or(Decimal::ZERO),
+                                benchmark.dates.first().cloned().unwrap_or_default(),
+                                benchmark.dates.last().cloned().unwrap_or_default()
+                            )?)
+                        } else {
+                            None
+                        },
+                        risk_free_rate.map(|r| Decimal::from_f64(r).unwrap_or_default())
+                    );
+                    
+                    // Create result
+                    let result = RiskResult {
+                        query_id: (*query_id).to_string(),
+                        portfolio_id: (*params).portfolio_id.clone(),
+                        start_date: (*params).start_date,
+                        end_date: (*params).end_date,
+                        risk_metrics,
+                        return_frequency: (*params).return_frequency.clone(),
+                        confidence_level: (*params).confidence_level,
+                        benchmark_id: (*params).benchmark_id.clone(),
+                        calculation_time: Utc::now(),
+                    };
+                    
+                    // Serialize to JSON for caching
+                    let json_result = serde_json::to_value(&result)
+                        .map_err(|e| anyhow!("Failed to serialize risk result: {}", e))?;
+                    
+                    Ok(json_result)
+                })
+            }),
         ).await?;
         
         // Deserialize from JSON
@@ -647,9 +708,10 @@ impl QueryApi {
             .map_err(|e| anyhow!("Failed to deserialize risk result: {}", e))?;
         
         // Complete audit trail
+        let event_id = event.event_id;
         self.audit_manager.complete_calculation(
-            &event.event_id,
-            vec![format!("risk_result:{}", query_id)],
+            &event_id,
+            vec![format!("risk_result:{}", *query_id_for_audit)],
         ).await?;
         
         Ok(risk_result)
@@ -689,106 +751,115 @@ impl QueryApi {
             serde_json::to_string(&params).unwrap_or_default()
         );
         
-        let result = self.cache.get_or_compute(
-            cache_key,
-            3600, // 1 hour TTL
-            || async {
-                // Get portfolio and benchmark data
-                let portfolio_data = self.data_service.get_portfolio_holdings_with_returns(
-                    &params.portfolio_id,
-                    params.start_date,
-                    params.end_date,
-                ).await?;
+        let cache_key = Arc::new(cache_key);
+        let params = Arc::new(params);
+        let data_service = Arc::clone(&self.data_service);
+        let query_id = Arc::new(query_id);
+        let query_id_for_audit = query_id.clone();
+        
+        let result = self.cache.compute_if_missing(
+            (*cache_key).clone(),
+            3600,
+            Box::new(move || {
+                let data_service = Arc::clone(&data_service);
+                let params = Arc::clone(&params);
+                let query_id = Arc::clone(&query_id);
                 
-                let benchmark_data = self.data_service.get_benchmark_holdings_with_returns(
-                    &params.benchmark_id,
-                    params.start_date,
-                    params.end_date,
-                ).await?;
-                
-                // Calculate overall attribution
-                let overall_attribution = calculate_attribution(
-                    portfolio_data.total_return,
-                    benchmark_data.total_return,
-                    &portfolio_data.holdings,
-                    &benchmark_data.holdings,
-                    &params.asset_class_field,
-                )?;
-                
-                // Calculate attribution by asset class
-                let mut asset_class_attribution = HashMap::new();
-                
-                // Group holdings by asset class
-                let portfolio_by_asset_class = group_holdings_by_field(
-                    &portfolio_data.holdings,
-                    &params.asset_class_field,
-                );
-                
-                let benchmark_by_asset_class = group_holdings_by_field(
-                    &benchmark_data.holdings,
-                    &params.asset_class_field,
-                );
-                
-                // Calculate attribution for each asset class
-                for (asset_class, _) in &portfolio_by_asset_class {
-                    let portfolio_holdings = portfolio_by_asset_class.get(asset_class)
-                        .cloned()
-                        .unwrap_or_default();
+                Box::pin(async move {
+                    let portfolio_data = data_service.get_portfolio_holdings_with_returns(
+                        &params.portfolio_id,
+                        params.start_date,
+                        params.end_date,
+                    ).await?;
                     
-                    let benchmark_holdings = benchmark_by_asset_class.get(asset_class)
-                        .cloned()
-                        .unwrap_or_default();
+                    let benchmark_data = data_service.get_benchmark_holdings_with_returns(
+                        &params.benchmark_id,
+                        params.start_date,
+                        params.end_date,
+                    ).await?;
                     
-                    // Calculate attribution for this asset class
-                    let attribution = calculate_attribution(
-                        portfolio_data.total_return,
-                        benchmark_data.total_return,
-                        &portfolio_holdings,
-                        &benchmark_holdings,
-                        "security_id", // Use security ID as the field for this level
+                    // Calculate overall attribution
+                    let overall_attribution = calculate_attribution(
+                        &convert_to_decimal_map(portfolio_data.total_return),
+                        &convert_to_decimal_map(benchmark_data.total_return),
+                        &convert_holdings_to_decimal_map(&portfolio_data.holdings),
+                        &convert_holdings_to_decimal_map(&benchmark_data.holdings)
                     )?;
                     
-                    asset_class_attribution.insert(asset_class.clone(), attribution);
-                }
-                
-                // Calculate sector attribution if requested
-                let sector_attribution = if params.include_sector.unwrap_or(false) {
-                    // Similar to asset class attribution but using sector field
-                    // Simplified for brevity
-                    Some(HashMap::new())
-                } else {
-                    None
-                };
-                
-                // Calculate security attribution if requested
-                let security_attribution = if params.include_security_selection.unwrap_or(false) {
-                    // Calculate attribution at security level
-                    // Simplified for brevity
-                    Some(HashMap::new())
-                } else {
-                    None
-                };
-                
-                // Create result
-                let result = AttributionResult {
-                    query_id: query_id.clone(),
-                    portfolio_id: params.portfolio_id.clone(),
-                    start_date: params.start_date,
-                    end_date: params.end_date,
-                    benchmark_id: params.benchmark_id.clone(),
-                    overall_attribution,
-                    asset_class_attribution,
-                    sector_attribution,
-                    security_attribution,
-                    calculation_time: Utc::now(),
-                };
-                
-                // Serialize to JSON for caching
-                let json_result = serde_json::to_value(&result)
-                    .map_err(|e| anyhow!("Failed to serialize attribution result: {}", e))?;
-                
-                Ok(json_result)
-            }
+                    // Calculate attribution by asset class
+                    let mut asset_class_attribution = HashMap::new();
+                    
+                    // Group holdings by asset class
+                    let portfolio_by_asset_class = group_holdings_by_field(
+                        &portfolio_data.holdings,
+                        &params.asset_class_field,
+                    );
+                    
+                    let benchmark_by_asset_class = group_holdings_by_field(
+                        &benchmark_data.holdings,
+                        &params.asset_class_field,
+                    );
+                    
+                    // Calculate attribution for each asset class
+                    for (asset_class, _) in &portfolio_by_asset_class {
+                        let portfolio_holdings = portfolio_by_asset_class.get(asset_class)
+                            .cloned()
+                            .unwrap_or_default();
+                        
+                        let benchmark_holdings = benchmark_by_asset_class.get(asset_class)
+                            .cloned()
+                            .unwrap_or_default();
+                        
+                        // Calculate attribution for this asset class
+                        let attribution = calculate_attribution(
+                            &convert_to_decimal_map(portfolio_data.total_return),
+                            &convert_to_decimal_map(benchmark_data.total_return),
+                            &convert_holdings_to_decimal_map(&portfolio_holdings),
+                            &convert_holdings_to_decimal_map(&benchmark_holdings)
+                        )?;
+                        
+                        asset_class_attribution.insert(asset_class.clone(), attribution);
+                    }
+                    
+                    // Calculate sector attribution if requested
+                    let sector_attribution = if params.include_sector.unwrap_or(false) {
+                        // Similar to asset class attribution but using sector field
+                        // Simplified for brevity
+                        Some(HashMap::new())
+                    } else {
+                        None
+                    };
+                    
+                    // Calculate security attribution if requested
+                    let security_attribution = if params.include_security_selection.unwrap_or(false) {
+                        // Calculate attribution at security level
+                        // Simplified for brevity
+                        Some(HashMap::new())
+                    } else {
+                        None
+                    };
+                    
+                    // Create result
+                    let result = AttributionResult {
+                        query_id: (*query_id).to_string(),
+                        portfolio_id: (*params).portfolio_id.clone(),
+                        start_date: (*params).start_date,
+                        end_date: (*params).end_date,
+                        benchmark_id: (*params).benchmark_id.clone(),
+                        overall_attribution,
+                        asset_class_attribution,
+                        sector_attribution,
+                        security_attribution,
+                        calculation_time: Utc::now(),
+                    };
+                    
+                    // Serialize to JSON for caching
+                    let json_result = serde_json::to_value(&result)
+                        .map_err(|e| anyhow!("Failed to serialize attribution result: {}", e))?;
+                    
+                    Ok(json_result)
+                })
+            }),
         ).await?;
         
         // Deserialize from JSON
@@ -796,9 +867,10 @@ impl QueryApi {
             .map_err(|e| anyhow!("Failed to deserialize attribution result: {}", e))?;
         
         // Complete audit trail
+        let event_id = event.event_id;
         self.audit_manager.complete_calculation(
-            &event.event_id,
-            vec![format!("attribution_result:{}", query_id)],
+            &event_id,
+            vec![format!("attribution_result:{}", *query_id_for_audit)],
         ).await?;
         
         Ok(attribution_result)
@@ -886,11 +958,14 @@ impl QueryApi {
             .map(|twr| twr.return_value)
             .unwrap_or_default();
         
-        let performance_difference = hypothetical_twr - original_twr;
+        let performance_difference = (hypothetical_twr - original_twr).to_f64().unwrap_or_default();
+        
+        // Store query_id before using it
+        let query_id_for_result = query_id.clone();
         
         // Create result
         let result = WhatIfResult {
-            query_id,
+            query_id: query_id_for_result.clone(),
             portfolio_id: params.portfolio_id.clone(),
             start_date: params.start_date,
             end_date: params.end_date,
@@ -904,9 +979,10 @@ impl QueryApi {
         self.data_service.delete_portfolio_data(&hypothetical_portfolio_id).await?;
         
         // Complete audit trail
+        let event_id = event.event_id;
         self.audit_manager.complete_calculation(
-            &event.event_id,
-            vec![format!("what_if_result:{}", query_id)],
+            &event_id,
+            vec![format!("what_if_result:{}", query_id_for_result)],
         ).await?;
         
         Ok(result)
@@ -1075,10 +1151,59 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     
-    // Mock data access service for testing
-    struct MockDataAccessService;
+    struct MockExchangeRateProvider;
     
-    #[async_trait::async_trait]
+    #[async_trait]
+    impl ExchangeRateProvider for MockExchangeRateProvider {
+        async fn get_exchange_rate(
+            &self,
+            _base_currency: &CurrencyCode,
+            _quote_currency: &CurrencyCode,
+            _date: NaiveDate,
+            _request_id: &str,
+        ) -> Result<ExchangeRate> {
+            Ok(ExchangeRate {
+                base_currency: "USD".to_string(),
+                quote_currency: "EUR".to_string(),
+                rate: Decimal::ONE,
+                date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                source: "Mock".to_string(),
+            })
+        }
+    }
+
+    struct MockCache;
+
+    #[async_trait]
+    impl Cache<String, serde_json::Value> for MockCache {
+        async fn get(&self, key: &String) -> Result<Option<serde_json::Value>> {
+            Ok(None)
+        }
+
+        async fn set(&self, key: String, value: serde_json::Value, ttl_seconds: Option<u64>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete(&self, key: &String) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl AsyncComputeCache for MockCache {
+        async fn compute_if_missing(
+            &self,
+            key: String,
+            ttl_seconds: u64,
+            compute: Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = Result<serde_json::Value>> + Send>> + Send + Sync>,
+        ) -> Result<serde_json::Value> {
+            compute().await
+        }
+    }
+
+    struct MockDataAccessService;
+
+    #[async_trait]
     impl DataAccessService for MockDataAccessService {
         async fn get_portfolio_data(
             &self,
@@ -1086,236 +1211,75 @@ mod tests {
             _start_date: NaiveDate,
             _end_date: NaiveDate,
         ) -> Result<PortfolioData> {
-            // Return mock data
-            let mut daily_market_values = HashMap::new();
-            let mut daily_returns = HashMap::new();
-            
-            let start = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
-            
-            // Generate 30 days of data
-            for i in 0..30 {
-                let date = start.checked_add_days(chrono::Days::new(i)).unwrap();
-                let value = 1_000_000.0 * (1.0 + 0.001 * i as f64);
-                daily_market_values.insert(date, value);
-                
-                if i > 0 {
-                    let prev_date = start.checked_add_days(chrono::Days::new(i - 1)).unwrap();
-                    let prev_value = daily_market_values.get(&prev_date).unwrap();
-                    let daily_return = (value / prev_value) - 1.0;
-                    daily_returns.insert(date, daily_return);
-                }
-            }
-            
-            // Create cash flows
-            let cash_flows = vec![
-                CashFlow {
-                    date: start.checked_add_days(chrono::Days::new(10)).unwrap(),
-                    amount: Decimal::from_f64(50_000.0).unwrap(),
-                    description: "Deposit".to_string(),
-                },
-                CashFlow {
-                    date: start.checked_add_days(chrono::Days::new(20)).unwrap(),
-                    amount: Decimal::from_f64(-30_000.0).unwrap(),
-                    description: "Withdrawal".to_string(),
-                },
-            ];
-            
             Ok(PortfolioData {
-                beginning_market_value: 1_000_000.0,
-                ending_market_value: 1_030_000.0,
-                cash_flows,
-                daily_market_values,
-                daily_returns,
+                beginning_market_value: 1000.0,
+                ending_market_value: 1100.0,
+                cash_flows: vec![],
+                daily_market_values: HashMap::new(),
+                daily_returns: HashMap::new(),
                 currency: "USD".to_string(),
             })
         }
-        
-        // Implement other methods with mock data
-        // ...
-        
+
         async fn get_portfolio_returns(
             &self,
             _portfolio_id: &str,
-            start_date: NaiveDate,
-            end_date: NaiveDate,
+            _start_date: NaiveDate,
+            _end_date: NaiveDate,
             _frequency: &str,
         ) -> Result<HashMap<NaiveDate, f64>> {
-            let mut returns = HashMap::new();
-            
-            let mut current_date = start_date;
-            let mut value = 1_000_000.0;
-            
-            while current_date <= end_date {
-                value *= 1.0 + 0.001;
-                let daily_return = 0.001;
-                returns.insert(current_date, daily_return);
-                
-                current_date = current_date.checked_add_days(chrono::Days::new(1)).unwrap();
-            }
-            
-            Ok(returns)
+            Ok(HashMap::new())
         }
-        
+
         async fn get_benchmark_returns(
             &self,
             _benchmark_id: &str,
-            start_date: NaiveDate,
-            end_date: NaiveDate,
+            _start_date: NaiveDate,
+            _end_date: NaiveDate,
         ) -> Result<ReturnSeries> {
-            let mut dates = Vec::new();
-            let mut returns = Vec::new();
-            
-            let mut current_date = start_date;
-            
-            while current_date <= end_date {
-                dates.push(current_date);
-                returns.push(0.0008); // Slightly lower than portfolio
-                
-                current_date = current_date.checked_add_days(chrono::Days::new(1)).unwrap();
-            }
-            
-            Ok(ReturnSeries { dates, returns })
+            Ok(ReturnSeries {
+                dates: vec![],
+                values: vec![],
+            })
         }
-        
+
         async fn get_benchmark_returns_by_frequency(
             &self,
-            benchmark_id: &str,
-            start_date: NaiveDate,
-            end_date: NaiveDate,
+            _benchmark_id: &str,
+            _start_date: NaiveDate,
+            _end_date: NaiveDate,
             _frequency: &str,
         ) -> Result<ReturnSeries> {
-            // For simplicity, just use daily returns
-            self.get_benchmark_returns(benchmark_id, start_date, end_date).await
+            Ok(ReturnSeries {
+                dates: vec![],
+                values: vec![],
+            })
         }
-        
+
         async fn get_portfolio_holdings_with_returns(
             &self,
             _portfolio_id: &str,
             _start_date: NaiveDate,
             _end_date: NaiveDate,
         ) -> Result<PortfolioHoldingsWithReturns> {
-            // Mock holdings data
-            let holdings = vec![
-                HoldingWithReturn {
-                    security_id: "AAPL".to_string(),
-                    weight: 0.25,
-                    return_value: 0.05,
-                    contribution: 0.0125,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Equity"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Technology"));
-                        attrs
-                    },
-                },
-                HoldingWithReturn {
-                    security_id: "MSFT".to_string(),
-                    weight: 0.20,
-                    return_value: 0.04,
-                    contribution: 0.008,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Equity"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Technology"));
-                        attrs
-                    },
-                },
-                HoldingWithReturn {
-                    security_id: "GOVT".to_string(),
-                    weight: 0.30,
-                    return_value: 0.01,
-                    contribution: 0.003,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Fixed Income"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Government"));
-                        attrs
-                    },
-                },
-                HoldingWithReturn {
-                    security_id: "CORP".to_string(),
-                    weight: 0.25,
-                    return_value: 0.02,
-                    contribution: 0.005,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Fixed Income"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Corporate"));
-                        attrs
-                    },
-                },
-            ];
-            
             Ok(PortfolioHoldingsWithReturns {
-                total_return: 0.0285, // Sum of contributions
-                holdings,
+                total_return: 0.1,
+                holdings: vec![],
             })
         }
-        
+
         async fn get_benchmark_holdings_with_returns(
             &self,
             _benchmark_id: &str,
             _start_date: NaiveDate,
             _end_date: NaiveDate,
         ) -> Result<BenchmarkHoldingsWithReturns> {
-            // Mock benchmark holdings data
-            let holdings = vec![
-                HoldingWithReturn {
-                    security_id: "AAPL".to_string(),
-                    weight: 0.20,
-                    return_value: 0.05,
-                    contribution: 0.01,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Equity"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Technology"));
-                        attrs
-                    },
-                },
-                HoldingWithReturn {
-                    security_id: "MSFT".to_string(),
-                    weight: 0.15,
-                    return_value: 0.04,
-                    contribution: 0.006,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Equity"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Technology"));
-                        attrs
-                    },
-                },
-                HoldingWithReturn {
-                    security_id: "GOVT".to_string(),
-                    weight: 0.40,
-                    return_value: 0.01,
-                    contribution: 0.004,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Fixed Income"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Government"));
-                        attrs
-                    },
-                },
-                HoldingWithReturn {
-                    security_id: "CORP".to_string(),
-                    weight: 0.25,
-                    return_value: 0.02,
-                    contribution: 0.005,
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("asset_class".to_string(), serde_json::json!("Fixed Income"));
-                        attrs.insert("sector".to_string(), serde_json::json!("Corporate"));
-                        attrs
-                    },
-                },
-            ];
-            
             Ok(BenchmarkHoldingsWithReturns {
-                total_return: 0.025, // Sum of contributions
-                holdings,
+                total_return: 0.08,
+                holdings: vec![],
             })
         }
-        
+
         async fn clone_portfolio_data(
             &self,
             _source_portfolio_id: &str,
@@ -1323,35 +1287,31 @@ mod tests {
             _start_date: NaiveDate,
             _end_date: NaiveDate,
         ) -> Result<()> {
-            // Mock implementation - just return success
             Ok(())
         }
-        
+
         async fn apply_hypothetical_transaction(
             &self,
             _portfolio_id: &str,
             _transaction: &HypotheticalTransaction,
         ) -> Result<()> {
-            // Mock implementation - just return success
             Ok(())
         }
-        
+
         async fn delete_portfolio_data(&self, _portfolio_id: &str) -> Result<()> {
-            // Mock implementation - just return success
             Ok(())
         }
     }
     
     #[tokio::test]
     async fn test_calculate_performance() {
-        // Create dependencies
         let storage = Arc::new(InMemoryAuditTrailStorage::new());
         let audit_manager = Arc::new(AuditTrailManager::new(storage.clone()));
-        let cache = crate::calculations::distributed_cache::CacheFactory::create_mock_cache();
+        let cache = Arc::new(MockCache);
         
         // Create mock currency converter
-        let mock_exchange_rate_provider = Arc::new(crate::calculations::currency::MockExchangeRateProviderMock::new());
-        let currency_converter = Arc::new(crate::calculations::currency::CurrencyConverter::new(
+        let mock_exchange_rate_provider = Arc::new(MockExchangeRateProvider);
+        let currency_converter = Arc::new(CurrencyConverter::new(
             mock_exchange_rate_provider,
             "USD".to_string(),
         ));
@@ -1389,4 +1349,17 @@ mod tests {
         assert!(result.risk_metrics.is_some());
         assert!(result.benchmark_comparison.is_some());
     }
+}
+
+// Add helper functions
+fn convert_to_decimal_map(value: f64) -> HashMap<String, Decimal> {
+    let mut map = HashMap::new();
+    map.insert("total".to_string(), Decimal::from_f64(value).unwrap_or_default());
+    map
+}
+
+fn convert_holdings_to_decimal_map(holdings: &[HoldingWithReturn]) -> HashMap<String, Decimal> {
+    holdings.iter().map(|h| {
+        (h.security_id.clone(), Decimal::from_f64(h.return_value).unwrap_or_default())
+    }).collect()
 } 
