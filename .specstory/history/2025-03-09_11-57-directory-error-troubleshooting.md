@@ -13186,13 +13186,511 @@ Let's create an updated script that will handle this error by using a different 
 
 _****_
 
-
+```diff
+- 
++ #!/bin/bash
++ 
++ # Script to commit changes and push to both develop and main branches
++ # With handling for non-fast-forward errors
++ 
++ # Check if git is installed
++ if ! command -v git &> /dev/null; then
++     echo "Error: git is not installed. Please install git first."
++     exit 1
++ fi
++ 
++ # Check if we're in a git repository
++ if ! git rev-parse --is-inside-work-tree &> /dev/null; then
++     echo "Error: Not in a git repository. Please run this script from within a git repository."
++     exit 1
++ fi
++ 
++ # Check for uncommitted changes
++ if [ -z "$(git status --porcelain)" ]; then
++     echo "No changes to commit."
++     exit 0
++ fi
++ 
++ # Display current status
++ echo "Current git status:"
++ git status
++ 
++ # Ask for confirmation
++ read -p "Do you want to commit and push these changes to both develop and main branches? (y/n): " confirm
++ if [[ $confirm != [yY] && $confirm != [yY][eE][sS] ]]; then
++     echo "Operation cancelled."
++     exit 0
++ fi
++ 
++ # Ask for commit message
++ read -p "Enter commit message: " message
++ if [ -z "$message" ]; then
++     message="Update documentation and clean up references"
++ fi
++ 
++ # Store the current branch
++ current_branch=$(git symbolic-ref --short HEAD)
++ echo "Current branch: $current_branch"
++ 
++ # Add all changes
++ git add .
++ 
++ # Commit changes
++ git commit -m "$message"
++ 
++ # Push to develop branch first
++ if git show-ref --verify --quiet refs/heads/develop; then
++     echo "Pushing to develop branch..."
++     
++     # If we're not already on develop, switch to it
++     if [ "$current_branch" != "develop" ]; then
++         git checkout develop
++     fi
++     
++     # Pull latest changes from develop to avoid conflicts
++     git pull origin develop
++     
++     # Push to develop
++     git push origin develop
++     
++     echo "Successfully pushed to develop branch."
++ else
++     echo "Warning: develop branch not found. Skipping push to develop."
++ fi
++ 
++ # Push to main branch
++ if git show-ref --verify --quiet refs/heads/main; then
++     echo "Pushing to main branch..."
++     
++     # Switch to main branch
++     git checkout main
++     
++     # Pull latest changes from main to avoid conflicts
++     git pull origin main
++     
++     # Create a temporary branch for merging
++     git checkout -b temp_merge_branch
++     
++     # Pull the latest from develop
++     git pull origin develop
++     
++     # Now checkout main again
++     git checkout main
++     
++     # Merge the temporary branch with --no-ff to ensure a merge commit
++     git merge --no-ff temp_merge_branch -m "Merge develop into main: $message"
++     
++     # Push to main
++     git push origin main
++     
++     # Clean up the temporary branch
++     git branch -D temp_merge_branch
++     
++     echo "Successfully pushed to main branch."
++ else
++     echo "Warning: main branch not found. Skipping push to main."
++ fi
++ 
++ # Return to the original branch
++ if [ "$current_branch" != "$(git symbolic-ref --short HEAD)" ]; then
++     git checkout "$current_branch"
++     echo "Returned to $current_branch branch."
++ fi
++ 
++ echo "Done!" 
+```
 
 ---
 
 _****_
 
+Now, let's make the new script executable:
 
+---
+
+_****_
+
+```bash
+chmod +x commit_and_push_fixed.sh
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % 
+
+```
+
+---
+
+_****_
+
+Let's try a different approach. Instead of using a script, let's manually execute the git commands to ensure we handle the non-fast-forward error correctly. First, let's check the current status:
+
+---
+
+_****_
+
+```bash
+git status
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git status
+On branch develop
+Your branch is up to date with 'origin/develop'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   .specstory/history/2025-03-09_11-57-directory-error-troubleshooting.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        commit_and_push_fixed.sh
+
+no changes added to commit (use "git add" and/or "git commit -a")
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Now, let's add and commit the changes:
+
+---
+
+_****_
+
+```bash
+git add .
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % 
+
+```
+
+---
+
+_****_
+
+```bash
+git commit -m "Update documentation and clean up references"
+```
+
+```
+<it -m "Update documentation and clean up references"
+[develop 9205d05] Update documentation and clean up references
+ 2 files changed, 1026 insertions(+)
+ create mode 100755 commit_and_push_fixed.sh
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Now, let's push to the develop branch:
+
+---
+
+_****_
+
+```bash
+git push origin develop
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git push origin develop
+Enumerating objects: 10, done.
+Counting objects: 100% (10/10), done.
+Delta compression using up to 14 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (6/6), 9.34 KiB | 4.67 MiB/s, done.
+Total 6 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/sethdford/investment-performance-platform.git
+To https://github.com/sethdford/investment-performance-calculator.git
+   7792c65..9205d05  develop -> develop
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Now, let's switch to the main branch and merge the changes from develop:
+
+---
+
+_****_
+
+```bash
+git checkout main
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git checkout main
+Switched to branch 'main'
+Your branch is behind 'origin/main' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Let's first pull the latest changes from the main branch:
+
+---
+
+_****_
+
+```bash
+git pull origin main
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git pull origin main
+From https://github.com/sethdford/investment-performance-calculator
+ * branch            main       -> FETCH_HEAD
+Updating 35ebe22..d73fb08
+Fast-forward
+ README.md | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Now, let's merge the changes from the develop branch:
+
+---
+
+_****_
+
+```bash
+git merge --no-ff develop -m "Merge develop into main: Update documentation and clean up references"
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git merge --no-ff develop -m "Merge develop into ma
+in: Update documentation and clean up references"        git merge --no-ff develop -m "Merge develop into ma
+in: Update documentation and clean up references"
+Auto-merging README.md
+CONFLICT (content): Merge conflict in README.md
+Automatic merge failed; fix conflicts and then commit the result.
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+We have a merge conflict in README.md. Let's resolve it:
+
+---
+
+_****_
+
+Read file: undefined
+
+---
+
+_****_
+
+Let's resolve the merge conflict by editing the README.md file:
+
+---
+
+_****_
+
+```diff
+- <<<<<<< HEAD
+- # Investment Performance Platform
+- =======
+  # Modern Conversational Financial Advisor
+- >>>>>>> develop
+  
+  A modern investment management platform powered by a human-level conversational financial advisor using emerging AI techniques.
+  
+  ## Overview
+  
+- <<<<<<< HEAD
+- The Investment Performance Platform is a high-performance, scalable system built on AWS serverless architecture. It provides APIs for managing investment portfolios, items, and transactions, and calculates various performance metrics such as Time-Weighted Return (TWR), Money-Weighted Return (MWR), volatility, Sharpe ratio, and more.
+- =======
+  This platform combines advanced financial modeling with state-of-the-art conversational AI to provide a comprehensive investment management solution. The system is designed to help financial advisors and individuals manage their investments more effectively, optimize tax strategies, and plan for financial goals.
+  
+  - **Context Window Management**: Intelligently manages the LLM context window for optimal performance
+  - **Relevance Scoring**: Prioritizes the most relevant information for generating responses
+- >>>>>>> develop
+  
+  ## Architecture
+  ## License
+  
+- <<<<<<< HEAD
+- This project is proprietary and confidential.
+- 
+- ## Contact
+- 
+- For questions or support, please contact [your-email@example.com](mailto:your-email@example.com). 
+- =======
+  This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- >>>>>>> develop
+  
+```
+
+---
+
+_****_
+
+Now, let's commit the resolved conflict:
+
+---
+
+_****_
+
+```bash
+git add README.md
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % 
+
+```
+
+---
+
+_****_
+
+```bash
+git commit -m "Merge develop into main: Update documentation and clean up references"
+```
+
+```
+< main: Update documentation and clean up references"
+[main 45d3cfa] Merge develop into main: Update documentation and clean up references
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Now, let's push the changes to the main branch:
+
+---
+
+_****_
+
+```bash
+git push origin main
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git push origin main
+Enumerating objects: 7, done.
+Counting objects: 100% (7/7), done.
+Delta compression using up to 14 threads
+Compressing objects: 100% (3/3), done.
+Writing objects: 100% (3/3), 371 bytes | 371.00 KiB/s, done.
+Total 3 (delta 2), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (2/2), completed with 2 local objects.
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/sethdford/investment-performance-platform.git
+To https://github.com/sethdford/investment-performance-calculator.git
+   d73fb08..45d3cfa  main -> main
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+Finally, let's switch back to the develop branch:
+
+---
+
+_****_
+
+```bash
+git checkout develop
+```
+
+```
+sethford@Seths-MacBook-Pro rust-investment-performance % git checkout develop
+Switched to branch 'develop'
+Your branch is up to date with 'origin/develop'.
+sethford@Seths-MacBook-Pro rust-investment-performance %
+```
+
+---
+
+_****_
+
+## Success! Changes Pushed to Both Branches
+
+Great news! We've successfully pushed the changes to both the develop and main branches. Here's a summary of what we did:
+
+1. **Pushed to the develop branch**:
+   - Added all changes to the staging area
+   - Committed the changes with the message "Update documentation and clean up references"
+   - Successfully pushed to the develop branch
+
+2. **Merged and pushed to the main branch**:
+   - Switched to the main branch
+   - Pulled the latest changes from the remote main branch
+   - Merged the changes from develop into main
+   - Resolved a merge conflict in README.md by keeping the content from the develop branch
+   - Committed the resolved merge
+   - Successfully pushed to the main branch
+
+3. **Returned to the develop branch**:
+   - Switched back to the develop branch for continued development
+
+The documentation has been successfully updated in both branches, with all references to "Wealth Management" replaced with "Modern Conversational Financial Advisor" or "Open FI.AI Platform" as appropriate. The new VISION.md file is also included in both branches.
+
+### Repository Note
+
+I noticed from the git output that your repository has moved:
+```
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/sethdford/investment-performance-platform.git
+```
+
+You might want to update your local repository's remote URL to reflect this change:
+
+```bash
+git remote set-url origin https://github.com/sethdford/investment-performance-platform.git
+```
+
+This will ensure that future git operations use the correct repository URL.
+
+### Next Steps
+
+Now that your documentation is updated and consistent across both branches, you can continue with your development work. The project's vision and focus are clearly articulated in the documentation, and all references to "Wealth Management" have been cleaned up.
+
+---
+
+_**User**_
+
+Can we can change the git repo name from investment-performance-platform to investment-management-platform and commit the readme to the main branch.
+
+---
+
+_**Assistant**_
+
+I'll help you change the repository name and commit the updated README.md to the main branch. Let's break this down into steps:
+
+1. First, let's update the README.md title to match the new repository name
+2. Then we'll update the git remote URL
+3. Finally, we'll commit and push the changes to the main branch
+
+Let's start by updating the README.md:
 
 ---
 
