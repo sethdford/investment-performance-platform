@@ -14,6 +14,7 @@ use shared::{
     validation::{Validate, ValidationError},
 };
 use std::str::FromStr;
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct IngestRequest {
@@ -94,9 +95,7 @@ impl DataIngestion {
         info!(path = %path, method = %method, "Received API request");
         
         // Extract request ID for tracing
-        let request_id = event.request_context
-            .and_then(|ctx| ctx.request_id)
-            .unwrap_or_else(|| "unknown".to_string());
+        let request_id = event.request_context.request_id.unwrap_or_else(|| "unknown".to_string());
         
         // Only handle POST requests
         if method != "POST" {
@@ -300,7 +299,9 @@ impl DataIngestion {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: shared::models::Status::Active,
-            metadata: Default::default(),
+            metadata: HashMap::new(),
+            holdings: Vec::new(),
+            transactions: Vec::new(),
         };
         
         // Validate the portfolio
@@ -353,7 +354,7 @@ impl DataIngestion {
             account_number: format!("ACC-{}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             name: account_data.name,
             portfolio_id: account_data.portfolio_id,
-            account_type: shared::models::AccountType::Regular,
+            account_type: shared::models::AccountType::Individual,
             tax_status: shared::models::TaxStatus::Taxable,
             inception_date: Utc::now().date_naive(),
             created_at: Utc::now(),
@@ -416,13 +417,13 @@ impl DataIngestion {
             name: security_data.name,
             security_type: match security_data.security_type.as_str() {
                 "equity" | "Equity" => shared::models::SecurityType::Equity,
-                "bond" | "Bond" => shared::models::SecurityType::Bond,
+                "bond" | "Bond" => shared::models::SecurityType::FixedIncome,
                 "mutual_fund" | "MutualFund" => shared::models::SecurityType::MutualFund,
                 "etf" | "ETF" => shared::models::SecurityType::ETF,
                 "option" | "Option" => shared::models::SecurityType::Option,
                 "future" | "Future" => shared::models::SecurityType::Future,
-                "forex" | "Forex" => shared::models::SecurityType::Forex,
-                "crypto" | "Crypto" => shared::models::SecurityType::Crypto,
+                "forex" | "Forex" => shared::models::SecurityType::Other("Forex".to_string()),
+                "crypto" | "Crypto" => shared::models::SecurityType::Other("Crypto".to_string()),
                 _ => shared::models::SecurityType::Other(security_data.security_type),
             },
             asset_class: shared::models::AssetClass::Other("Unknown".to_string()),

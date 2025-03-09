@@ -1,0 +1,473 @@
+{
+  "etfs": [
+    {
+      "id": "VTI",
+      "name": "Vanguard Total Stock Market ETF",
+      "asset_class": "us_equity",
+      "expense_ratio": 0.0003,
+      "category": "Large Blend",
+      "description": "Seeks to track the performance of the CRSP US Total Market Index.",
+      "average_volume": 3500000,
+      "aum_billions": 289.5,
+      "inception_date": "2001-05-24",
+      "holdings_count": 3687,
+      "top_holdings": [
+        {"name": "Apple Inc.", "weight": 0.0612},
+        {"name": "Microsoft Corp.", "weight": 0.0574},
+        {"name": "Amazon.com Inc.", "weight": 0.0312},
+        {"name": "NVIDIA Corp.", "weight": 0.0245},
+        {"name": "Alphabet Inc. Class A", "weight": 0.0178}
+      ],
+      "sector_weights": {
+        "Technology": 0.2650,
+        "Healthcare": 0.1380,
+        "Financial Services": 0.1290,
+        "Consumer Cyclical": 0.1050,
+        "Industrials": 0.0930,
+        "Communication Services": 0.0830,
+        "Consumer Defensive": 0.0650,
+        "Energy": 0.0460,
+        "Utilities": 0.0250,
+        "Real Estate": 0.0250,
+        "Basic Materials": 0.0210
+      },
+      "performance": {
+        "1_month": -0.0120,
+        "3_month": 0.0350,
+        "1_year": 0.1850,
+        "3_year": 0.0980,
+        "5_year": 0.1120,
+        "10_year": 0.1240
+      }
+    },
+    {
+      "id": "VXUS",
+      "name": "Vanguard Total International Stock ETF",
+      "asset_class": "international_equity",
+      "expense_ratio": 0.0007,
+      "category": "Foreign Large Blend",
+      "description": "Seeks to track the performance of the FTSE Global All Cap ex US Index.",
+      "average_volume": 2500000,
+      "aum_billions": 123.7,
+      "inception_date": "2011-01-26",
+      "holdings_count": 7896,
+      "top_holdings": [
+        {"name": "Taiwan Semiconductor Manufacturing", "weight": 0.0168},
+        {"name": "Nestle SA", "weight": 0.0142},
+        {"name": "Tencent Holdings Ltd.", "weight": 0.0124},
+        {"name": "Samsung Electronics Co Ltd", "weight": 0.0118},
+        {"name": "ASML Holding NV", "weight": 0.0112}
+      ],
+      "sector_weights": {
+        "Financial Services": 0.1950,
+        "Technology": 0.1650,
+        "Industrials": 0.1580,
+        "Consumer Cyclical": 0.1120,
+        "Healthcare": 0.0980,
+        "Consumer Defensive": 0.0880,
+        "Basic Materials": 0.0750,
+        "Communication Services": 0.0580,
+        "Energy": 0.0450,
+        "Utilities": 0.0330,
+        "Real Estate": 0.0280
+      },
+      "performance": {
+        "1_month": -0.0080,
+        "3_month": 0.0270,
+        "1_year": 0.1420,
+        "3_year": 0.0650,
+        "5_year": 0.0580,
+        "10_year": 0.0480
+      }
+    },
+    {
+      "id": "BND",
+      "name": "Vanguard Total Bond Market ETF",
+      "asset_class": "us_fixed_income",
+      "expense_ratio": 0.0003,
+      "category": "Intermediate-Term Bond",
+      "description": "Seeks to track the performance of the Bloomberg U.S. Aggregate Float Adjusted Index.",
+      "average_volume": 5800000,
+      "aum_billions": 96.8,
+      "inception_date": "2007-04-03",
+      "holdings_count": 10174,
+      "credit_quality": {
+        "AAA": 0.6720,
+        "AA": 0.0310,
+        "A": 0.1180,
+        "BBB": 0.1730,
+        "BB": 0.0040,
+        "B": 0.0010,
+        "Below B": 0.0000,
+        "Not Rated": 0.0010
+      },
+      "maturity": {
+        "1-3 Years": 0.2510,
+        "3-5 Years": 0.2180,
+        "5-7 Years": 0.1290,
+        "7-10 Years": 0.1080,
+        "10-20 Years": 0.0650,
+        "20-30 Years": 0.1690,
+        "30+ Years": 0.0600
+      },
+      "performance": {
+        "1_month": 0.0050,
+        "3_month": 0.0120,
+        "1_year": 0.0380,
+        "3_year": -0.0120,
+        "5_year": 0.0080,
+        "10_year": 0.0150
+      }
+    },
+    {
+      "id": "BNDX",
+      "name": "Vanguard Total International Bond ETF",
+      "asset_class": "international_fixed_income",
+      "expense_ratio": 0.0007,
+      "category": "International Bond",
+      "description": "Seeks to track the performance of the Bloomberg Global Aggregate ex-USD Float Adjusted RIC Capped Index (USD Hedged).",
+      "average_volume": 2300000,
+      "aum_billions": 43.2,
+      "inception_date": "2013-05-31",
+      "holdings_count": 6156,
+      "credit_quality": {
+        "AAA": 0.2190,
+        "AA": 0.2350,
+        "A": 0.2580,
+        "BBB": 0.2510,
+        "BB": 0.0180,
+        "B": 0.0030,
+        "Below B": 0.0010,
+        "Not Rated": 0.0150
+      },
+      "maturity": {
+        "1-3 Years": 0.2480,
+        "3-5 Years": 0.2150,
+        "5-7 Years": 0.1320,
+        "7-10 Years": 0.1450,
+        "10-20 Years": 0.1180,
+        "20-30 Years": 0.1280,
+        "30+ Years": 0.0140
+      },
+      "performance": {
+        "1_month": 0.0030,
+        "3_month": 0.0080,
+        "1_year": 0.0320,
+        "3_year": -0.0080,
+        "5_year": 0.0050,
+        "10_year": 0.0180
+      }
+    },
+    {
+      "id": "VIG",
+      "name": "Vanguard Dividend Appreciation ETF",
+      "asset_class": "us_equity",
+      "expense_ratio": 0.0006,
+      "category": "Large Blend",
+      "description": "Seeks to track the performance of the S&P U.S. Dividend Growers Index.",
+      "average_volume": 1200000,
+      "aum_billions": 76.5,
+      "inception_date": "2006-04-21",
+      "holdings_count": 314,
+      "top_holdings": [
+        {"name": "Microsoft Corp.", "weight": 0.0465},
+        {"name": "Apple Inc.", "weight": 0.0421},
+        {"name": "JPMorgan Chase & Co.", "weight": 0.0312},
+        {"name": "Johnson & Johnson", "weight": 0.0298},
+        {"name": "Visa Inc. Class A", "weight": 0.0287}
+      ],
+      "sector_weights": {
+        "Technology": 0.2180,
+        "Industrials": 0.2080,
+        "Financial Services": 0.1680,
+        "Healthcare": 0.1450,
+        "Consumer Defensive": 0.1120,
+        "Consumer Cyclical": 0.0780,
+        "Basic Materials": 0.0280,
+        "Energy": 0.0180,
+        "Utilities": 0.0130,
+        "Communication Services": 0.0120
+      },
+      "performance": {
+        "1_month": -0.0080,
+        "3_month": 0.0320,
+        "1_year": 0.1680,
+        "3_year": 0.0920,
+        "5_year": 0.1080,
+        "10_year": 0.1150
+      }
+    }
+  ],
+  "mutual_funds": [
+    {
+      "id": "VTSAX",
+      "name": "Vanguard Total Stock Market Index Fund Admiral Shares",
+      "asset_class": "us_equity",
+      "expense_ratio": 0.0004,
+      "category": "Large Blend",
+      "description": "Seeks to track the performance of the CRSP US Total Market Index.",
+      "aum_billions": 1300.5,
+      "inception_date": "2000-11-13",
+      "minimum_investment": 3000,
+      "holdings_count": 3687,
+      "top_holdings": [
+        {"name": "Apple Inc.", "weight": 0.0612},
+        {"name": "Microsoft Corp.", "weight": 0.0574},
+        {"name": "Amazon.com Inc.", "weight": 0.0312},
+        {"name": "NVIDIA Corp.", "weight": 0.0245},
+        {"name": "Alphabet Inc. Class A", "weight": 0.0178}
+      ],
+      "sector_weights": {
+        "Technology": 0.2650,
+        "Healthcare": 0.1380,
+        "Financial Services": 0.1290,
+        "Consumer Cyclical": 0.1050,
+        "Industrials": 0.0930,
+        "Communication Services": 0.0830,
+        "Consumer Defensive": 0.0650,
+        "Energy": 0.0460,
+        "Utilities": 0.0250,
+        "Real Estate": 0.0250,
+        "Basic Materials": 0.0210
+      },
+      "performance": {
+        "1_month": -0.0120,
+        "3_month": 0.0350,
+        "1_year": 0.1850,
+        "3_year": 0.0980,
+        "5_year": 0.1120,
+        "10_year": 0.1240
+      }
+    },
+    {
+      "id": "VBTLX",
+      "name": "Vanguard Total Bond Market Index Fund Admiral Shares",
+      "asset_class": "us_fixed_income",
+      "expense_ratio": 0.0005,
+      "category": "Intermediate-Term Bond",
+      "description": "Seeks to track the performance of the Bloomberg U.S. Aggregate Float Adjusted Index.",
+      "aum_billions": 316.8,
+      "inception_date": "2001-11-12",
+      "minimum_investment": 3000,
+      "holdings_count": 10174,
+      "credit_quality": {
+        "AAA": 0.6720,
+        "AA": 0.0310,
+        "A": 0.1180,
+        "BBB": 0.1730,
+        "BB": 0.0040,
+        "B": 0.0010,
+        "Below B": 0.0000,
+        "Not Rated": 0.0010
+      },
+      "maturity": {
+        "1-3 Years": 0.2510,
+        "3-5 Years": 0.2180,
+        "5-7 Years": 0.1290,
+        "7-10 Years": 0.1080,
+        "10-20 Years": 0.0650,
+        "20-30 Years": 0.1690,
+        "30+ Years": 0.0600
+      },
+      "performance": {
+        "1_month": 0.0050,
+        "3_month": 0.0120,
+        "1_year": 0.0380,
+        "3_year": -0.0120,
+        "5_year": 0.0080,
+        "10_year": 0.0150
+      }
+    },
+    {
+      "id": "VFIAX",
+      "name": "Vanguard 500 Index Fund Admiral Shares",
+      "asset_class": "us_equity",
+      "expense_ratio": 0.0004,
+      "category": "Large Blend",
+      "description": "Seeks to track the performance of the S&P 500 Index.",
+      "aum_billions": 806.9,
+      "inception_date": "2000-11-13",
+      "minimum_investment": 3000,
+      "holdings_count": 503,
+      "top_holdings": [
+        {"name": "Apple Inc.", "weight": 0.0730},
+        {"name": "Microsoft Corp.", "weight": 0.0685},
+        {"name": "Amazon.com Inc.", "weight": 0.0372},
+        {"name": "NVIDIA Corp.", "weight": 0.0292},
+        {"name": "Alphabet Inc. Class A", "weight": 0.0212}
+      ],
+      "sector_weights": {
+        "Technology": 0.2980,
+        "Healthcare": 0.1320,
+        "Financial Services": 0.1280,
+        "Consumer Cyclical": 0.1020,
+        "Communication Services": 0.0880,
+        "Industrials": 0.0820,
+        "Consumer Defensive": 0.0650,
+        "Energy": 0.0460,
+        "Utilities": 0.0240,
+        "Real Estate": 0.0230,
+        "Basic Materials": 0.0120
+      },
+      "performance": {
+        "1_month": -0.0110,
+        "3_month": 0.0370,
+        "1_year": 0.1920,
+        "3_year": 0.1020,
+        "5_year": 0.1180,
+        "10_year": 0.1280
+      }
+    }
+  ],
+  "target_date_funds": [
+    {
+      "id": "VFFVX",
+      "name": "Vanguard Target Retirement 2055 Fund",
+      "asset_class": "allocation",
+      "expense_ratio": 0.0008,
+      "category": "Target-Date 2055",
+      "description": "Designed for investors planning to retire between 2053 and 2057.",
+      "aum_billions": 38.2,
+      "inception_date": "2010-08-18",
+      "minimum_investment": 1000,
+      "asset_allocation": {
+        "us_equity": 0.5420,
+        "international_equity": 0.3580,
+        "us_fixed_income": 0.0700,
+        "international_fixed_income": 0.0300
+      },
+      "glide_path": [
+        {"years_to_retirement": 40, "equity": 0.9000, "fixed_income": 0.1000},
+        {"years_to_retirement": 30, "equity": 0.8500, "fixed_income": 0.1500},
+        {"years_to_retirement": 20, "equity": 0.8000, "fixed_income": 0.2000},
+        {"years_to_retirement": 10, "equity": 0.7000, "fixed_income": 0.3000},
+        {"years_to_retirement": 0, "equity": 0.5000, "fixed_income": 0.5000},
+        {"years_to_retirement": -10, "equity": 0.3000, "fixed_income": 0.7000},
+        {"years_to_retirement": -20, "equity": 0.3000, "fixed_income": 0.7000}
+      ],
+      "performance": {
+        "1_month": -0.0090,
+        "3_month": 0.0320,
+        "1_year": 0.1580,
+        "3_year": 0.0780,
+        "5_year": 0.0880,
+        "10_year": 0.0920
+      }
+    },
+    {
+      "id": "VTHRX",
+      "name": "Vanguard Target Retirement 2030 Fund",
+      "asset_class": "allocation",
+      "expense_ratio": 0.0008,
+      "category": "Target-Date 2030",
+      "description": "Designed for investors planning to retire between 2028 and 2032.",
+      "aum_billions": 82.6,
+      "inception_date": "2006-06-07",
+      "minimum_investment": 1000,
+      "asset_allocation": {
+        "us_equity": 0.4280,
+        "international_equity": 0.2820,
+        "us_fixed_income": 0.2030,
+        "international_fixed_income": 0.0870
+      },
+      "glide_path": [
+        {"years_to_retirement": 40, "equity": 0.9000, "fixed_income": 0.1000},
+        {"years_to_retirement": 30, "equity": 0.8500, "fixed_income": 0.1500},
+        {"years_to_retirement": 20, "equity": 0.8000, "fixed_income": 0.2000},
+        {"years_to_retirement": 10, "equity": 0.7000, "fixed_income": 0.3000},
+        {"years_to_retirement": 0, "equity": 0.5000, "fixed_income": 0.5000},
+        {"years_to_retirement": -10, "equity": 0.3000, "fixed_income": 0.7000},
+        {"years_to_retirement": -20, "equity": 0.3000, "fixed_income": 0.7000}
+      ],
+      "performance": {
+        "1_month": -0.0070,
+        "3_month": 0.0280,
+        "1_year": 0.1320,
+        "3_year": 0.0620,
+        "5_year": 0.0720,
+        "10_year": 0.0780
+      }
+    }
+  ],
+  "tax_advantaged_accounts": [
+    {
+      "id": "traditional_ira",
+      "name": "Traditional IRA",
+      "description": "A tax-deferred retirement account where contributions may be tax-deductible.",
+      "contribution_limit": {
+        "2023": 6500,
+        "2024": 7000,
+        "catch_up_50_plus": 1000
+      },
+      "tax_treatment": {
+        "contributions": "May be tax-deductible depending on income and workplace retirement plan coverage",
+        "growth": "Tax-deferred",
+        "withdrawals": "Taxed as ordinary income",
+        "early_withdrawals": "10% penalty before age 59½ with some exceptions",
+        "required_minimum_distributions": "Start at age 73"
+      },
+      "income_limits": {
+        "deduction_phaseout_single_with_workplace_plan": {
+          "2023": {"start": 73000, "end": 83000},
+          "2024": {"start": 77000, "end": 87000}
+        },
+        "deduction_phaseout_married_with_workplace_plan": {
+          "2023": {"start": 116000, "end": 136000},
+          "2024": {"start": 123000, "end": 143000}
+        }
+      }
+    },
+    {
+      "id": "roth_ira",
+      "name": "Roth IRA",
+      "description": "A tax-free retirement account where qualified withdrawals are tax-free.",
+      "contribution_limit": {
+        "2023": 6500,
+        "2024": 7000,
+        "catch_up_50_plus": 1000
+      },
+      "tax_treatment": {
+        "contributions": "After-tax (not deductible)",
+        "growth": "Tax-free",
+        "withdrawals": "Tax-free for qualified distributions",
+        "early_withdrawals": "Contributions can be withdrawn anytime without penalty; earnings may be subject to taxes and 10% penalty before age 59½ with some exceptions",
+        "required_minimum_distributions": "None during the owner's lifetime"
+      },
+      "income_limits": {
+        "contribution_phaseout_single": {
+          "2023": {"start": 138000, "end": 153000},
+          "2024": {"start": 146000, "end": 161000}
+        },
+        "contribution_phaseout_married": {
+          "2023": {"start": 218000, "end": 228000},
+          "2024": {"start": 230000, "end": 240000}
+        }
+      }
+    },
+    {
+      "id": "401k",
+      "name": "401(k) Plan",
+      "description": "An employer-sponsored retirement plan that allows employees to save and invest for retirement on a tax-advantaged basis.",
+      "contribution_limit": {
+        "2023": 22500,
+        "2024": 23000,
+        "catch_up_50_plus": 7500
+      },
+      "tax_treatment": {
+        "contributions": "Pre-tax, reducing taxable income",
+        "growth": "Tax-deferred",
+        "withdrawals": "Taxed as ordinary income",
+        "early_withdrawals": "10% penalty before age 59½ with some exceptions",
+        "required_minimum_distributions": "Start at age 73"
+      },
+      "employer_match": {
+        "typical": "50% to 100% of employee contributions up to 3-6% of salary"
+      },
+      "loan_provisions": {
+        "allowed": true,
+        "maximum": "50% of vested balance up to $50,000",
+        "repayment_term": "Typically 5 years"
+      }
+    }
+  ]
+} 

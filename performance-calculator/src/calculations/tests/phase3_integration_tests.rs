@@ -1,16 +1,100 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use rust_decimal_macros::dec;
 use tokio::sync::Mutex;
+use std::time::Instant;
+use async_trait::async_trait;
+use serde_json::Value;
+use std::default::Default;
+use rand::Rng;
 
 use crate::calculations::{
-    config::Config,
+    config::{Config, RedisCacheConfig, AppConfig},
     factory::ComponentFactory,
-    analytics::{Factor, Scenario, FactorAnalysisResult, ScenarioAnalysisResult, RiskDecompositionResult},
+    analytics::{Factor, Scenario},
     visualization::{ChartType, ChartOptions, ChartSeries, ChartDefinition, ChartFormat, ReportTemplate, TableDefinition, TableColumn, ReportFormat},
-    integration::{EmailNotification, WebhookNotification, ApiRequest, DataImportRequest},
+    integration::{EmailNotification, WebhookNotification, ApiRequest, DataImportRequest, ApiResponse, DataImportResult, ApiClient, DataImportService},
+    distributed_cache::StringCache,
+    audit::AuditTrail,
 };
+
+// Mock API client for testing
+#[derive(Clone)]
+struct MockApiClient {
+    requests_sent: Arc<Mutex<Vec<ApiRequest>>>,
+}
+
+impl MockApiClient {
+    fn new() -> Self {
+        Self {
+            requests_sent: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+#[async_trait]
+impl StringCache for MockApiClient {
+    async fn get_string(&self, _key: &str) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn set_string(&self, _key: String, _value: String, _ttl_seconds: Option<u64>) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn delete_string(&self, _key: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ApiClient for MockApiClient {
+    async fn send_request(&self, request: ApiRequest) -> anyhow::Result<ApiResponse> {
+        let mut requests = self.requests_sent.lock().await;
+        requests.push(request);
+        
+        Ok(ApiResponse {
+            status_code: 200,
+            headers: HashMap::new(),
+            body: Some(serde_json::json!({"result": "success"})),
+            error: None,
+        })
+    }
+
+    async fn get_oauth2_token(&self, endpoint_id: &str) -> anyhow::Result<String> {
+        Ok("mock_token".to_string())
+    }
+}
+
+// Mock data import service for testing
+#[derive(Clone)]
+struct MockDataImportService {
+    imports_processed: Arc<Mutex<Vec<DataImportRequest>>>,
+}
+
+impl MockDataImportService {
+    fn new() -> Self {
+        Self {
+            imports_processed: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+#[async_trait]
+impl AuditTrail for MockDataImportService {
+    async fn record(&self, _record: crate::calculations::audit::AuditRecord) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn get_events_for_resource(&self, _resource_id: &str) -> anyhow::Result<Vec<crate::calculations::audit::AuditRecord>> {
+        Ok(vec![])
+    }
+
+    async fn get_events_for_tenant(&self, _tenant_id: &str) -> anyhow::Result<Vec<crate::calculations::audit::AuditRecord>> {
+        Ok(vec![])
+    }
+}
 
 #[tokio::test]
 async fn test_analytics_engine() {
@@ -25,7 +109,7 @@ async fn test_analytics_engine() {
     });
 
     // Create component factory
-    let factory = ComponentFactory::new(config);
+    let factory = ComponentFactory::new(config.into_app_config());
     
     // Create analytics engine
     let analytics_engine = factory.create_analytics_engine().unwrap();
@@ -122,7 +206,7 @@ async fn test_visualization_engine() {
     });
 
     // Create component factory
-    let factory = ComponentFactory::new(config);
+    let factory = ComponentFactory::new(config.into_app_config());
     
     // Create visualization engine
     let mut visualization_engine = factory.create_visualization_engine().unwrap();
@@ -256,19 +340,18 @@ async fn test_visualization_engine() {
     
     // Export data
     let export_result = visualization_engine.export_data(
-        vec![
-            vec!["Header 1".to_string(), "Header 2".to_string()],
-            vec!["Value 1".to_string(), "Value 2".to_string()],
-            vec!["Value 3".to_string(), "Value 4".to_string()],
-        ],
-        "CSV",
+        vec![{
+            let mut row = HashMap::new();
+            row.insert("Header 1".to_string(), serde_json::json!("Value 1"));
+            row.insert("Header 2".to_string(), serde_json::json!("Value 2"));
+            row
+        }],
+        ReportFormat::CSV,
         "TEST-REQUEST-6",
     ).await.unwrap();
     
     // Verify export results
-    assert!(!export_result.id.is_empty());
-    assert_eq!(export_result.format, "CSV");
-    assert!(!export_result.data.is_empty());
+    assert!(!export_result.is_empty());
 }
 
 #[tokio::test]
@@ -279,6 +362,7 @@ async fn test_integration_engine() {
         webhooks_sent: Arc<Mutex<Vec<WebhookNotification>>>,
     }
     
+    #[async_trait]
     impl crate::calculations::integration::NotificationService for MockNotificationService {
         async fn send_email(&self, notification: EmailNotification) -> anyhow::Result<()> {
             let mut emails = self.emails_sent.lock().await;
@@ -294,45 +378,10 @@ async fn test_integration_engine() {
     }
     
     // Create a mock API client for testing
-    struct MockApiClient {
-        requests_sent: Arc<Mutex<Vec<ApiRequest>>>,
-    }
-    
-    impl crate::calculations::integration::ApiClient for MockApiClient {
-        async fn send_request(&self, request: ApiRequest) -> anyhow::Result<crate::calculations::integration::ApiResponse> {
-            let mut requests = self.requests_sent.lock().await;
-            requests.push(request);
-            
-            Ok(crate::calculations::integration::ApiResponse {
-                status_code: 200,
-                headers: HashMap::new(),
-                body: Some(serde_json::json!({"result": "success"})),
-            })
-        }
-    }
+    let api_client = MockApiClient::new();
     
     // Create a mock data import service for testing
-    struct MockDataImportService {
-        imports_processed: Arc<Mutex<Vec<DataImportRequest>>>,
-    }
-    
-    impl crate::calculations::integration::DataImportService for MockDataImportService {
-        async fn process_import(&self, request: DataImportRequest) -> anyhow::Result<crate::calculations::integration::DataImportResult> {
-            let mut imports = self.imports_processed.lock().await;
-            imports.push(request.clone());
-            
-            Ok(crate::calculations::integration::DataImportResult {
-                import_id: "TEST-IMPORT-1".to_string(),
-                import_type: request.import_type,
-                format: request.format,
-                timestamp: chrono::Utc::now(),
-                records_processed: 3,
-                records_imported: 3,
-                records_with_errors: 0,
-                errors: vec![],
-            })
-        }
-    }
+    let data_import_service = MockDataImportService::new();
     
     // Create configuration with integration enabled
     let mut config = Config::default();
@@ -341,11 +390,12 @@ async fn test_integration_engine() {
         api_endpoints: {
             let mut endpoints = HashMap::new();
             endpoints.insert("TEST_API".to_string(), crate::calculations::integration::ApiEndpointConfig {
-                base_url: "https://api.example.com".to_string(),
-                auth_type: crate::calculations::integration::ApiAuthType::None,
-                auth_params: None,
-                default_headers: None,
+                url: "https://api.example.com".to_string(),
+                auth_type: crate::calculations::integration::AuthType::None,
                 timeout_seconds: 30,
+                retry_enabled: true,
+                max_retries: 3,
+                retry_delay_seconds: 1,
             });
             endpoints
         },
@@ -356,30 +406,37 @@ async fn test_integration_engine() {
             smtp_username: "user".to_string(),
             smtp_password: "password".to_string(),
             from_address: "noreply@example.com".to_string(),
-            from_name: "Performance Calculator".to_string(),
+            default_recipients: vec![],
+            use_tls: true,
         },
         webhooks: crate::calculations::integration::WebhookConfig {
             enabled: true,
-            endpoints: vec![
-                crate::calculations::integration::WebhookEndpointConfig {
-                    id: "TEST_WEBHOOK".to_string(),
+            webhooks: {
+                let mut map = HashMap::new();
+                map.insert("TEST_WEBHOOK".to_string(), crate::calculations::integration::WebhookEndpoint {
                     url: "https://webhook.example.com/callback".to_string(),
-                    secret: Some("webhook_secret".to_string()),
-                    event_types: None,
-                },
-            ],
+                    method: "POST".to_string(),
+                    headers: HashMap::new(),
+                    event_types: vec!["*".to_string()],
+                    retry_enabled: true,
+                    max_retries: 3,
+                });
+                map
+            },
         },
         data_import: crate::calculations::integration::DataImportConfig {
             enabled: true,
-            max_file_size_bytes: 10_000_000,
-            allowed_formats: vec!["CSV".to_string(), "JSON".to_string()],
+            supported_formats: vec!["CSV".to_string(), "JSON".to_string()],
+            max_file_size: 10_000_000,
+            validate_data: true,
+            backup_before_import: false,
         },
         enable_caching: true,
         cache_ttl_seconds: 3600,
     });
     
     // Create component factory
-    let factory = ComponentFactory::new(config);
+    let factory = ComponentFactory::new(config.clone().into_app_config());
     
     // Create cache and audit trail
     let cache = factory.create_redis_cache().await.unwrap_or_else(|_| {
@@ -391,31 +448,22 @@ async fn test_integration_engine() {
     // Create mock services
     let emails_sent = Arc::new(Mutex::new(Vec::new()));
     let webhooks_sent = Arc::new(Mutex::new(Vec::new()));
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let imports_processed = Arc::new(Mutex::new(Vec::new()));
     
     let notification_service = Arc::new(MockNotificationService {
         emails_sent: emails_sent.clone(),
         webhooks_sent: webhooks_sent.clone(),
     });
     
-    let api_client = Arc::new(MockApiClient {
-        requests_sent: requests_sent.clone(),
-    });
-    
-    let data_import_service = Arc::new(MockDataImportService {
-        imports_processed: imports_processed.clone(),
-    });
-    
     // Create integration engine with mock services
-    let integration_engine = Arc::new(crate::calculations::integration::IntegrationEngine::new(
-        factory.config.integration.clone().unwrap(),
-        cache,
-        audit_trail,
-        Some(notification_service.clone()),
-        Some(api_client.clone()),
-        Some(data_import_service.clone()),
-    ));
+    let integration_config = config.integration.unwrap();
+    let api_client_clone = api_client.clone();
+    let data_import_service_clone = data_import_service.clone();
+    
+    let integration_engine = crate::calculations::integration::IntegrationEngine::new(
+        integration_config,
+        Arc::new(api_client_clone) as Arc<dyn StringCache + Send + Sync>,
+        Arc::new(data_import_service_clone) as Arc<dyn AuditTrail + Send + Sync>,
+    );
     
     // Test sending an email notification
     let email_notification = EmailNotification {
@@ -466,7 +514,7 @@ async fn test_integration_engine() {
     integration_engine.send_api_request(api_request.clone(), "TEST-REQUEST-9").await.unwrap();
     
     // Verify API request was sent
-    let requests = requests_sent.lock().await;
+    let requests = api_client.requests_sent.lock().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].endpoint_id, "TEST_API");
     assert_eq!(requests[0].method, "GET");
@@ -482,23 +530,22 @@ async fn test_integration_engine() {
     integration_engine.import_data(import_request.clone(), "TEST-REQUEST-10").await.unwrap();
     
     // Verify data import was processed
-    let imports = imports_processed.lock().await;
+    let imports = data_import_service.imports_processed.lock().await;
     assert_eq!(imports.len(), 1);
     assert_eq!(imports[0].import_type, "TEST_IMPORT");
     assert_eq!(imports[0].format, "CSV");
 }
 
 #[tokio::test]
-async fn test_phase3_integration() {
+async fn test_phase3_integration() -> anyhow::Result<()> {
     // Create configuration with all Phase 3 features enabled
     let mut config = Config::default();
     
     // Enable Redis cache
-    config.redis_cache = Some(crate::calculations::distributed_cache::RedisCacheConfig {
-        enabled: true,
+    config.redis_cache = Some(crate::calculations::config::RedisCacheConfig {
         url: "redis://localhost:6379".to_string(),
-        prefix: "test:".to_string(),
-        ttl_seconds: 3600,
+        max_connections: 10,
+        default_ttl_seconds: 3600,
     });
     
     // Enable analytics
@@ -525,18 +572,34 @@ async fn test_phase3_integration() {
         enabled: true,
         api_endpoints: HashMap::new(),
         email: crate::calculations::integration::EmailConfig::default(),
-        webhooks: crate::calculations::integration::WebhookConfig::default(),
+        webhooks: crate::calculations::integration::WebhookConfig {
+            enabled: true,
+            webhooks: {
+                let mut map = HashMap::new();
+                map.insert("TEST_WEBHOOK".to_string(), crate::calculations::integration::WebhookEndpoint {
+                    url: "https://webhook.example.com/callback".to_string(),
+                    method: "POST".to_string(),
+                    headers: HashMap::new(),
+                    event_types: vec!["*".to_string()],
+                    retry_enabled: true,
+                    max_retries: 3,
+                });
+                map
+            },
+        },
         data_import: crate::calculations::integration::DataImportConfig {
             enabled: true,
-            max_file_size_bytes: 10_000_000,
-            allowed_formats: vec!["CSV".to_string(), "JSON".to_string()],
+            supported_formats: vec!["CSV".to_string(), "JSON".to_string()],
+            max_file_size: 10_000_000,
+            validate_data: true,
+            backup_before_import: false,
         },
         enable_caching: true,
         cache_ttl_seconds: 3600,
     });
     
     // Create component factory
-    let factory = ComponentFactory::new(config);
+    let factory = ComponentFactory::new(config.clone().into_app_config());
     
     // Create Phase 3 components
     let analytics_engine = factory.create_analytics_engine().unwrap();
@@ -609,8 +672,8 @@ async fn test_phase3_integration() {
     
     // Generate a report
     let mut report_params = HashMap::new();
-    report_params.insert("r_squared".to_string(), factor_analysis.model_r_squared.to_string());
-    report_params.insert("alpha".to_string(), factor_analysis.alpha.to_string());
+    report_params.insert("r_squared".to_string(), serde_json::json!(factor_analysis.model_r_squared.to_string()));
+    report_params.insert("alpha".to_string(), serde_json::json!(factor_analysis.alpha.to_string()));
     
     let report_result = visualization_engine.generate_report(
         "FACTOR_ANALYSIS_REPORT",
@@ -627,7 +690,11 @@ async fn test_phase3_integration() {
         cc: None,
         bcc: None,
         attachments: Some(vec![
-            (report_result.id.clone(), report_result.data.clone(), "text/html".to_string())
+            crate::calculations::integration::EmailAttachment {
+                name: report_result.id.clone(),
+                data: report_result.data.clone(),
+                content_type: "text/html".to_string(),
+            }
         ]),
         is_html: false,
     };
@@ -649,6 +716,129 @@ async fn test_phase3_integration() {
     assert!(!chart_result.id.is_empty());
     assert!(!report_result.id.is_empty());
     assert!(!import_result.import_id.is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_analytics_error_handling() -> anyhow::Result<()> {
+    let config = Config::default();
+    let factory = ComponentFactory::new(config.into_app_config());
+    let analytics_engine = factory.create_analytics_engine().unwrap();
+    
+    // Test invalid date range
+    let result = analytics_engine.perform_factor_analysis(
+        "PORTFOLIO1",
+        NaiveDate::from_ymd_opt(2022, 12, 31).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), // End before start
+        None,
+        "TEST-REQUEST",
+    ).await;
+    
+    assert!(result.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_visualization_options() -> anyhow::Result<()> {
+    let config = Config::default();
+    let factory = ComponentFactory::new(config.into_app_config());
+    let mut visualization_engine = factory.create_visualization_engine().unwrap();
+    
+    // Test different chart types
+    let chart_types = vec![
+        ChartType::Line,
+        ChartType::Bar,
+        ChartType::Pie,
+        ChartType::Scatter,
+    ];
+    
+    for chart_type in chart_types {
+        let chart_def = ChartDefinition {
+            options: ChartOptions {
+                title: format!("Test {:?} Chart", chart_type),
+                chart_type,
+                width: 800,
+                height: 400,
+                ..Default::default()
+            },
+            series: vec![ChartSeries {
+                name: "Test Series".to_string(),
+                data: vec![("A".to_string(), dec!(1.0)), ("B".to_string(), dec!(2.0))],
+                color: None,
+                series_type: None,
+            }],
+        };
+        
+        let result = visualization_engine.generate_chart(
+            chart_def,
+            ChartFormat::SVG,
+            "TEST-REQUEST",
+        ).await;
+        
+        assert!(result.is_ok());
+    }
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_integration_error_handling() -> anyhow::Result<()> {
+    let config = Config::default();
+    let factory = ComponentFactory::new(config.into_app_config());
+    let integration_engine = factory.create_integration_engine().unwrap();
+    
+    // Test invalid email
+    let invalid_email = EmailNotification {
+        subject: "Test".to_string(),
+        body: "Test".to_string(),
+        recipients: vec!["invalid@".to_string()],
+        cc: None,
+        bcc: None,
+        attachments: None,
+        is_html: false,
+    };
+    
+    let result = integration_engine.send_email(invalid_email, "TEST-REQUEST").await;
+    assert!(result.is_err());
+    
+    // Test invalid webhook
+    let invalid_webhook = WebhookNotification {
+        event_type: "test".to_string(),
+        data: serde_json::json!(null),
+        target_webhooks: Some(vec!["non-existent".to_string()]),
+    };
+    
+    let result = integration_engine.send_webhook(invalid_webhook, "TEST-REQUEST").await;
+    assert!(result.is_err());
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_retry_mechanisms() -> anyhow::Result<()> {
+    let config = Config::default();
+    let factory = ComponentFactory::new(config.into_app_config());
+    let integration_engine = factory.create_integration_engine().unwrap();
+    
+    // Test API retry
+    let api_request = ApiRequest {
+        endpoint_id: "TEST_API".to_string(),
+        method: "GET".to_string(),
+        path: "/slow-endpoint".to_string(),
+        query_params: None,
+        headers: None,
+        body: None,
+    };
+    
+    let start = Instant::now();
+    let result = integration_engine.send_api_request(api_request, "TEST-REQUEST").await;
+    let duration = start.elapsed();
+    
+    // Should have attempted retries
+    assert!(duration.as_secs() >= 2);
+    
+    Ok(())
 }
 
 // Helper function to create test returns

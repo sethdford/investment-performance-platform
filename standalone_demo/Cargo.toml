@@ -1,0 +1,9 @@
+[package]
+name = "conversation-storage-demo"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+uuid = { version = "1.4", features = ["v4", "serde"] } 

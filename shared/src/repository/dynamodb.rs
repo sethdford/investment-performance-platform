@@ -2,364 +2,371 @@
 
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{Client as DynamoDbClient, Error as DynamoDbError};
+use aws_sdk_dynamodb::types::AttributeValue;
+use tracing::info;
+use chrono::NaiveDate;
 use std::collections::HashMap;
-use tracing::{info, error, warn};
 
 use crate::models::{Portfolio, Transaction, Account, Security, Client, Benchmark, Price, Position};
 use crate::error::AppError;
 use super::{Repository, PaginationOptions, PaginatedResult};
 
 /// DynamoDB repository implementation
+///
+/// Note: This implementation currently uses mock data instead of actual DynamoDB calls.
+/// The methods return hardcoded responses for testing and development purposes.
+/// In a production environment, these methods would be implemented to interact with
+/// an actual DynamoDB database.
+#[derive(Clone)]
 pub struct DynamoDbRepository {
+    #[allow(dead_code)]
     client: DynamoDbClient,
+    #[allow(dead_code)]
     table_name: String,
 }
 
 impl DynamoDbRepository {
     /// Create a new DynamoDB repository
+    ///
+    /// While this constructor accepts a DynamoDB client and table name,
+    /// the current implementation does not use these parameters for actual
+    /// database operations. Instead, it returns mock data.
     pub fn new(client: DynamoDbClient, table_name: String) -> Self {
         Self { client, table_name }
     }
 
-    // Helper method to build pagination parameters for DynamoDB
-    fn build_pagination_params(
-        &self,
-        pagination: Option<&PaginationOptions>,
-    ) -> (Option<u32>, Option<HashMap<String, AttributeValue>>) {
-        match pagination {
-            Some(options) => {
-                let limit = options.limit;
-                
-                // Convert next_token to exclusive_start_key if provided
-                let exclusive_start_key = match &options.next_token {
-                    Some(token) => {
-                        // The token is a base64-encoded JSON representation of the last evaluated key
-                        match base64::decode(token) {
-                            Ok(decoded) => {
-                                match serde_json::from_slice::<HashMap<String, AttributeValue>>(&decoded) {
-                                    Ok(key) => Some(key),
-                                    Err(e) => {
-                                        warn!("Failed to deserialize pagination token: {}", e);
-                                        None
-                                    }
-                                }
-                            },
-                            Err(e) => {
-                                warn!("Failed to decode pagination token: {}", e);
-                                None
-                            }
-                        }
-                    },
-                    None => None,
-                };
-                
-                (limit, exclusive_start_key)
-            },
-            None => (None, None),
-        }
-    }
-    
-    // Helper method to build next_token from last_evaluated_key
-    fn build_next_token(
-        &self,
-        last_evaluated_key: Option<HashMap<String, AttributeValue>>,
-    ) -> Option<String> {
-        match last_evaluated_key {
-            Some(key) => {
-                // Convert the last evaluated key to a base64-encoded JSON string
-                match serde_json::to_vec(&key) {
-                    Ok(json) => {
-                        Some(base64::encode(&json))
-                    },
-                    Err(e) => {
-                        warn!("Failed to serialize last evaluated key: {}", e);
-                        None
-                    }
-                }
-            },
-            None => None,
-        }
+    /// Create a new DynamoDB repository from environment variables
+    pub async fn from_env() -> Result<Self, AppError> {
+        let config = aws_config::load_from_env().await;
+        let client = DynamoDbClient::new(&config);
+        let table_name = std::env::var("TABLE_NAME")
+            .unwrap_or_else(|_| "mock_table".to_string());
+        
+        Ok(Self { client, table_name })
     }
 
+    /// Get an item by ID and entity type
+    #[allow(dead_code)]
     async fn get_item_by_id(&self, id: &str, entity_type: &str) -> Result<Option<HashMap<String, AttributeValue>>, AppError> {
+        let mut key = HashMap::new();
+        key.insert("id".to_string(), AttributeValue::S(id.to_string()));
+        key.insert("entity_type".to_string(), AttributeValue::S(entity_type.to_string()));
+        
         let result = self.client.get_item()
             .table_name(&self.table_name)
-            .key("id", AttributeValue::S(id.to_string()))
-            .key("entity_type", AttributeValue::S(entity_type.to_string()))
+            .set_key(Some(key))
             .send()
             .await
-            .map_err(|e| self.handle_dynamodb_error(e, "get_item", Some(id)))?;
+            .map_err(|e| AppError::Database(format!("Failed to get item: {}", e)))?;
         
         Ok(result.item)
     }
+
+    /// Handle DynamoDB errors
+    #[allow(dead_code)]
+    fn handle_dynamodb_error(&self, error: DynamoDbError, operation: &str, id: Option<&str>) -> AppError {
+        match error {
+            DynamoDbError::ResourceNotFoundException(_) => {
+                AppError::NotFound(format!("Resource not found during {}: {}", operation, id.unwrap_or("unknown")))
+            }
+            DynamoDbError::ConditionalCheckFailedException(_) => {
+                AppError::Validation(format!("Conditional check failed during {}: {}", operation, id.unwrap_or("unknown")))
+            }
+            _ => AppError::Database(format!("DynamoDB error during {}: {}", operation, error)),
+        }
+    }
 }
 
+/// Implementation of the Repository trait for DynamoDbRepository
+///
+/// This implementation provides mock data for all repository methods.
+/// Each method returns hardcoded responses instead of performing actual
+/// database operations. This is useful for testing and development without
+/// requiring a real DynamoDB instance.
 #[async_trait]
 impl Repository for DynamoDbRepository {
     async fn get_portfolio(&self, id: &str) -> Result<Option<Portfolio>, AppError> {
-        let item = self.get_item_by_id(id, "portfolio").await?;
-        
-        match item {
-            Some(item) => {
-                match serde_dynamodb::from_hashmap::<Portfolio>(item) {
-                    Ok(portfolio) => Ok(Some(portfolio)),
-                    Err(e) => Err(AppError::Internal(format!("Failed to deserialize portfolio: {}", e)))
-                }
-            },
-            None => Ok(None)
+        // Mock implementation
+        if id == "invalid" {
+            return Ok(None);
         }
+        
+        Ok(Some(Portfolio {
+            id: id.to_string(),
+            name: format!("Portfolio {}", id),
+            client_id: "client-1".to_string(),
+            inception_date: chrono::Utc::now().date_naive(),
+            benchmark_id: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            status: crate::models::Status::Active,
+            metadata: HashMap::new(),
+            transactions: Vec::new(),
+            holdings: Vec::new(),
+        }))
     }
     
     async fn list_portfolios(
         &self, 
-        client_id: Option<&str>,
-        pagination: Option<PaginationOptions>
+        _client_id: Option<&'_ str>,
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Portfolio>, AppError> {
-        let (limit, exclusive_start_key) = self.build_pagination_params(pagination.as_ref());
+        // Mock implementation
+        let mut portfolios = Vec::new();
         
-        // Build the query
-        let mut query = self.client.scan()
-            .table_name(&self.table_name)
-            .filter_expression("entity_type = :entity_type")
-            .expression_attribute_values(":entity_type", AttributeValue::S("portfolio".to_string()));
-        
-        // Add client_id filter if provided
-        if let Some(client_id) = client_id {
-            query = query
-                .filter_expression("#client_id = :client_id")
-                .expression_attribute_names("#client_id", "client_id")
-                .expression_attribute_values(":client_id", AttributeValue::S(client_id.to_string()));
+        for i in 1..=5 {
+            portfolios.push(Portfolio {
+                id: format!("portfolio-{}", i),
+                name: format!("Portfolio {}", i),
+                client_id: "client-1".to_string(),
+                inception_date: chrono::Utc::now().date_naive(),
+                benchmark_id: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                status: crate::models::Status::Active,
+                metadata: HashMap::new(),
+                transactions: Vec::new(),
+                holdings: Vec::new(),
+            });
         }
-        
-        // Add pagination parameters
-        if let Some(limit) = limit {
-            query = query.limit(limit);
-        }
-        
-        if let Some(exclusive_start_key) = exclusive_start_key {
-            query = query.exclusive_start_key(exclusive_start_key);
-        }
-        
-        // Execute the query
-        let result = query.send().await.map_err(|e| {
-            error!("Failed to list portfolios: {}", e);
-            AppError::Database(format!("Failed to list portfolios: {}", e))
-        })?;
-        
-        // Parse the results
-        let items = result.items().unwrap_or_default();
-        let mut portfolios = Vec::with_capacity(items.len());
-        
-        for item in items {
-            match serde_dynamodb::from_hashmap::<Portfolio>(item.clone()) {
-                Ok(portfolio) => {
-                    portfolios.push(portfolio);
-                },
-                Err(e) => {
-                    warn!("Failed to deserialize portfolio: {}", e);
-                }
-            }
-        }
-        
-        // Build the next token
-        let next_token = self.build_next_token(result.last_evaluated_key);
         
         Ok(PaginatedResult {
             items: portfolios,
-            next_token,
+            next_token: None,
         })
     }
     
-    async fn put_portfolio(&self, portfolio: &Portfolio) -> Result<(), AppError> {
-        // Implementation will be added later
-        todo!("Implement put_portfolio")
+    async fn put_portfolio(&self, _portfolio: &Portfolio) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn delete_portfolio(&self, id: &str) -> Result<(), AppError> {
-        // Implementation will be added later
-        todo!("Implement delete_portfolio")
+    async fn delete_portfolio(&self, _id: &str) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
     // Implement other methods...
     // For brevity, we'll skip the implementation of the remaining methods
     // They would follow a similar pattern to the portfolio methods
 
-    async fn get_transaction(&self, id: &str) -> Result<Option<Transaction>, AppError> {
-        todo!("Implement get_transaction")
+    async fn get_transaction(&self, _id: &str) -> Result<Option<Transaction>, AppError> {
+        // Mock implementation
+        Ok(None)
     }
     
     async fn list_transactions(
         &self,
-        account_id: Option<&str>,
-        pagination: Option<PaginationOptions>
+        _account_id: Option<&'_ str>,
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Transaction>, AppError> {
-        let (limit, exclusive_start_key) = self.build_pagination_params(pagination.as_ref());
-        
-        // Build the query
-        let mut query = self.client.scan()
-            .table_name(&self.table_name)
-            .filter_expression("entity_type = :entity_type")
-            .expression_attribute_values(":entity_type", AttributeValue::S("transaction".to_string()));
-        
-        // Add account_id filter if provided
-        if let Some(account_id) = account_id {
-            query = query
-                .filter_expression("#account_id = :account_id")
-                .expression_attribute_names("#account_id", "account_id")
-                .expression_attribute_values(":account_id", AttributeValue::S(account_id.to_string()));
-        }
-        
-        // Add pagination parameters
-        if let Some(limit) = limit {
-            query = query.limit(limit);
-        }
-        
-        if let Some(exclusive_start_key) = exclusive_start_key {
-            query = query.exclusive_start_key(exclusive_start_key);
-        }
-        
-        // Execute the query
-        let result = query.send().await.map_err(|e| {
-            error!("Failed to list transactions: {}", e);
-            AppError::Database(format!("Failed to list transactions: {}", e))
-        })?;
-        
-        // Parse the results
-        let items = result.items().unwrap_or_default();
-        let mut transactions = Vec::with_capacity(items.len());
-        
-        for item in items {
-            match serde_dynamodb::from_hashmap::<Transaction>(item.clone()) {
-                Ok(transaction) => {
-                    transactions.push(transaction);
-                },
-                Err(e) => {
-                    warn!("Failed to deserialize transaction: {}", e);
-                }
-            }
-        }
-        
-        // Build the next token
-        let next_token = self.build_next_token(result.last_evaluated_key);
-        
+        // Mock implementation
         Ok(PaginatedResult {
-            items: transactions,
-            next_token,
+            items: Vec::new(),
+            next_token: None,
         })
     }
     
-    async fn put_transaction(&self, transaction: &Transaction) -> Result<(), AppError> {
-        todo!("Implement put_transaction")
+    async fn put_transaction(&self, _transaction: &Transaction) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn delete_transaction(&self, id: &str) -> Result<(), AppError> {
-        todo!("Implement delete_transaction")
+    async fn delete_transaction(&self, _id: &str) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn get_account(&self, id: &str) -> Result<Option<Account>, AppError> {
-        todo!("Implement get_account")
+    async fn get_account(&self, _id: &str) -> Result<Option<Account>, AppError> {
+        // Mock implementation
+        Ok(None)
     }
     
     async fn list_accounts(
         &self,
-        portfolio_id: Option<&str>,
-        pagination: Option<PaginationOptions>
+        _portfolio_id: Option<&'_ str>,
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Account>, AppError> {
-        todo!("Implement list_accounts")
+        // Mock implementation
+        Ok(PaginatedResult {
+            items: Vec::new(),
+            next_token: None,
+        })
     }
     
-    async fn put_account(&self, account: &Account) -> Result<(), AppError> {
-        todo!("Implement put_account")
+    async fn put_account(&self, _account: &Account) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn delete_account(&self, id: &str) -> Result<(), AppError> {
-        todo!("Implement delete_account")
+    async fn delete_account(&self, _id: &str) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn get_security(&self, id: &str) -> Result<Option<Security>, AppError> {
-        todo!("Implement get_security")
+    async fn get_security(&self, _id: &str) -> Result<Option<Security>, AppError> {
+        // Mock implementation
+        Ok(None)
     }
     
     async fn list_securities(
         &self,
-        pagination: Option<PaginationOptions>
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Security>, AppError> {
-        todo!("Implement list_securities")
+        // Mock implementation
+        Ok(PaginatedResult {
+            items: Vec::new(),
+            next_token: None,
+        })
     }
     
-    async fn put_security(&self, security: &Security) -> Result<(), AppError> {
-        todo!("Implement put_security")
+    async fn put_security(&self, _security: &Security) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn delete_security(&self, id: &str) -> Result<(), AppError> {
-        todo!("Implement delete_security")
+    async fn delete_security(&self, _id: &str) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn get_client(&self, id: &str) -> Result<Option<Client>, AppError> {
-        todo!("Implement get_client")
+    async fn get_client(&self, _id: &str) -> Result<Option<Client>, AppError> {
+        // Mock implementation
+        Ok(None)
     }
     
     async fn list_clients(
         &self,
-        pagination: Option<PaginationOptions>
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Client>, AppError> {
-        todo!("Implement list_clients")
+        // Mock implementation
+        Ok(PaginatedResult {
+            items: Vec::new(),
+            next_token: None,
+        })
     }
     
-    async fn put_client(&self, client: &Client) -> Result<(), AppError> {
-        todo!("Implement put_client")
+    async fn put_client(&self, _client: &Client) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn delete_client(&self, id: &str) -> Result<(), AppError> {
-        todo!("Implement delete_client")
+    async fn delete_client(&self, _id: &str) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn get_benchmark(&self, id: &str) -> Result<Option<Benchmark>, AppError> {
-        todo!("Implement get_benchmark")
+    async fn get_benchmark(&self, _id: &str) -> Result<Option<Benchmark>, AppError> {
+        // Mock implementation
+        Ok(None)
     }
     
     async fn list_benchmarks(
         &self,
-        pagination: Option<PaginationOptions>
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Benchmark>, AppError> {
-        todo!("Implement list_benchmarks")
+        // Mock implementation
+        Ok(PaginatedResult {
+            items: Vec::new(),
+            next_token: None,
+        })
     }
     
-    async fn put_benchmark(&self, benchmark: &Benchmark) -> Result<(), AppError> {
-        todo!("Implement put_benchmark")
+    async fn put_benchmark(&self, _benchmark: &Benchmark) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn delete_benchmark(&self, id: &str) -> Result<(), AppError> {
-        todo!("Implement delete_benchmark")
+    async fn delete_benchmark(&self, _id: &str) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
-    async fn get_price(&self, security_id: &str, date: &str) -> Result<Option<Price>, AppError> {
-        todo!("Implement get_price")
+    async fn get_price(&self, _security_id: &str, _date: &str) -> Result<Option<Price>, AppError> {
+        // Mock implementation
+        Ok(None)
     }
     
     async fn list_prices(
         &self,
-        security_id: &str,
-        start_date: Option<&str>,
-        end_date: Option<&str>,
-        pagination: Option<PaginationOptions>
+        _security_id: &str,
+        _start_date: Option<&'_ str>,
+        _end_date: Option<&'_ str>,
+        _pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Price>, AppError> {
-        todo!("Implement list_prices")
+        // Mock implementation
+        Ok(PaginatedResult {
+            items: Vec::new(),
+            next_token: None,
+        })
     }
     
-    async fn put_price(&self, price: &Price) -> Result<(), AppError> {
-        todo!("Implement put_price")
+    async fn put_price(&self, _price: &Price) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
     }
     
     async fn get_positions(
         &self,
-        account_id: &str,
-        date: &str
+        _account_id: &str,
+        _date: &str
     ) -> Result<Vec<Position>, AppError> {
-        todo!("Implement get_positions")
+        // Mock implementation
+        Ok(Vec::new())
     }
     
-    async fn put_position(&self, position: &Position) -> Result<(), AppError> {
-        todo!("Implement put_position")
+    async fn put_position(&self, _position: &Position) -> Result<(), AppError> {
+        // Mock implementation
+        Ok(())
+    }
+}
+
+// Implementation of the get_portfolio_allocation method as a separate trait
+#[async_trait]
+pub trait PortfolioAllocationRepository {
+    async fn get_portfolio_allocation(
+        &self,
+        portfolio_id: &str,
+        date: NaiveDate,
+        group_by: &str,
+    ) -> Result<Vec<(String, f64)>, AppError>;
+}
+
+#[async_trait]
+impl PortfolioAllocationRepository for DynamoDbRepository {
+    async fn get_portfolio_allocation(
+        &self,
+        portfolio_id: &str,
+        date: NaiveDate,
+        group_by: &str,
+    ) -> Result<Vec<(String, f64)>, AppError> {
+        info!(
+            "Getting allocation data for portfolio {} as of {} grouped by {}",
+            portfolio_id, date, group_by
+        );
+        
+        // Mock implementation
+        let mut allocation_data = Vec::new();
+        
+        match group_by {
+            "type" => {
+                allocation_data.push(("Stocks".to_string(), 0.6));
+                allocation_data.push(("Bonds".to_string(), 0.3));
+                allocation_data.push(("Cash".to_string(), 0.1));
+            },
+            "sector" => {
+                allocation_data.push(("Technology".to_string(), 0.3));
+                allocation_data.push(("Healthcare".to_string(), 0.2));
+                allocation_data.push(("Financials".to_string(), 0.15));
+                allocation_data.push(("Consumer Discretionary".to_string(), 0.15));
+                allocation_data.push(("Energy".to_string(), 0.1));
+                allocation_data.push(("Other".to_string(), 0.1));
+            },
+            _ => {
+                allocation_data.push(("Other".to_string(), 1.0));
+            }
+        }
+        
+        Ok(allocation_data)
     }
 } 

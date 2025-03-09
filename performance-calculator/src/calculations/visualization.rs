@@ -9,9 +9,10 @@ use rust_decimal::Decimal;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::{info, warn, error};
 
 use crate::calculations::audit::AuditTrail;
-use crate::calculations::distributed_cache::Cache;
+use crate::calculations::distributed_cache::BinaryCache;
 
 /// Configuration for the Visualization module
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,7 +134,7 @@ pub struct ChartDefinition {
 }
 
 /// Chart output format
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ChartFormat {
     /// SVG format
     SVG,
@@ -216,7 +217,7 @@ pub struct TableDefinition {
 }
 
 /// Report output format
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ReportFormat {
     /// HTML format
     HTML,
@@ -245,12 +246,12 @@ pub struct ReportResult {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Visualization engine for generating charts and reports
+/// Engine for generating visualizations and reports
 pub struct VisualizationEngine {
     /// Configuration
     config: VisualizationConfig,
     /// Cache for visualization results
-    cache: Arc<dyn Cache + Send + Sync>,
+    cache: Arc<dyn BinaryCache + Send + Sync>,
     /// Audit trail
     audit_trail: Arc<dyn AuditTrail + Send + Sync>,
     /// Report templates
@@ -261,7 +262,7 @@ impl VisualizationEngine {
     /// Create a new visualization engine
     pub fn new(
         config: VisualizationConfig,
-        cache: Arc<dyn Cache + Send + Sync>,
+        cache: Arc<dyn BinaryCache + Send + Sync>,
         audit_trail: Arc<dyn AuditTrail + Send + Sync>,
     ) -> Self {
         Self {
@@ -283,7 +284,7 @@ impl VisualizationEngine {
         self.templates.values().cloned().collect()
     }
     
-    /// Generate a chart
+    /// Generate a chart based on the provided definition
     pub async fn generate_chart(
         &self,
         definition: ChartDefinition,
@@ -309,16 +310,15 @@ impl VisualizationEngine {
             }
         }
         
-        // Create cache key
-        let cache_key = format!(
-            "visualization:chart:{}:{}",
-            serde_json::to_string(&limited_definition)?,
-            format!("{:?}", format)
-        );
-        
         // Try to get from cache
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<ChartResult>(&cache_key).await? {
+            let cache_key = format!("chart:{}:{}:{}", 
+                definition.options.title,
+                format!("{:?}", format),
+                request_id
+            );
+            
+            if let Some(cached_data) = self.cache.get_binary(&cache_key).await? {
                 // Record cache hit in audit trail
                 self.audit_trail.record(crate::calculations::audit::AuditRecord {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -327,11 +327,21 @@ impl VisualizationEngine {
                     entity_type: "visualization".to_string(),
                     action: "chart_generation_cache_hit".to_string(),
                     user_id: "system".to_string(),
-                    parameters: format!("chart_type={:?},format={:?}", limited_definition.options.chart_type, format),
+                    parameters: format!("chart_type={:?},format={:?}", definition.options.chart_type, format),
                     result: format!("cached_result_found"),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    event_type: "cache_hit".to_string(),
+                    resource_id: cache_key.clone(),
+                    resource_type: "chart".to_string(),
+                    operation: "get".to_string(),
+                    details: format!("Chart cache hit for {}", definition.options.title),
+                    status: "success".to_string(),
+                    tenant_id: "system".to_string(),
                 }).await?;
                 
-                return Ok(cached_result);
+                // Deserialize the cached data
+                let chart_result: ChartResult = serde_json::from_slice(&cached_data)?;
+                return Ok(chart_result);
             }
         }
         
@@ -342,9 +352,27 @@ impl VisualizationEngine {
             ChartFormat::JSON => generate_json_chart(&limited_definition)?,
         };
         
+        // Generate cache key
+        let cache_key = format!("chart:{}:{}:{}", 
+            definition.options.title,
+            format!("{:?}", format),
+            request_id
+        );
+        
+        // Create result object
+        let result = ChartResult {
+            id: uuid::Uuid::new_v4().to_string(),
+            definition: limited_definition.clone(),
+            data: chart_data.clone(),
+            format,
+            created_at: chrono::Utc::now(),
+        };
+        
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &chart_data, Some(self.config.cache_ttl_seconds)).await?;
+            // Serialize the result
+            let serialized = serde_json::to_vec(&result)?;
+            self.cache.set_binary(cache_key.clone(), serialized, Some(self.config.cache_ttl_seconds)).await?;
         }
         
         // Record in audit trail
@@ -361,18 +389,20 @@ impl VisualizationEngine {
                 format
             ),
             result: format!("chart_generated"),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "chart_generated".to_string(),
+            resource_id: cache_key.clone(),
+            resource_type: "chart".to_string(),
+            operation: "generate".to_string(),
+            details: format!("Chart generated for {}", definition.options.title),
+            status: "success".to_string(),
+            tenant_id: "system".to_string(),
         }).await?;
         
-        Ok(ChartResult {
-            id: uuid::Uuid::new_v4().to_string(),
-            definition: limited_definition,
-            data: chart_data,
-            format,
-            created_at: chrono::Utc::now(),
-        })
+        Ok(result)
     }
 
-    /// Generate a report from a template
+    /// Generate a report based on the provided template
     pub async fn generate_report(
         &self,
         template_id: &str,
@@ -390,17 +420,15 @@ impl VisualizationEngine {
             .ok_or_else(|| anyhow!("Template not found: {}", template_id))?
             .clone();
         
-        // Create cache key
-        let cache_key = format!(
-            "visualization:report:{}:{}:{}",
-            template_id,
-            serde_json::to_string(&parameters)?,
-            format!("{:?}", format)
-        );
-        
         // Try to get from cache
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<ReportResult>(&cache_key).await? {
+            let cache_key = format!("report:{}:{}:{}", 
+                template_id,
+                format!("{:?}", format),
+                request_id
+            );
+            
+            if let Some(cached_data) = self.cache.get_binary(&cache_key).await? {
                 // Record cache hit in audit trail
                 self.audit_trail.record(crate::calculations::audit::AuditRecord {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -411,9 +439,19 @@ impl VisualizationEngine {
                     user_id: "system".to_string(),
                     parameters: format!("template_id={},format={:?}", template_id, format),
                     result: format!("cached_result_found"),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    event_type: "cache_hit".to_string(),
+                    resource_id: cache_key.clone(),
+                    resource_type: "report".to_string(),
+                    operation: "get".to_string(),
+                    details: format!("Report cache hit for template {}", template_id),
+                    status: "success".to_string(),
+                    tenant_id: "system".to_string(),
                 }).await?;
                 
-                return Ok(cached_result);
+                // Deserialize the cached data
+                let report_result: ReportResult = serde_json::from_slice(&cached_data)?;
+                return Ok(report_result);
             }
         }
         
@@ -456,9 +494,18 @@ impl VisualizationEngine {
             created_at: chrono::Utc::now(),
         };
         
+        // Generate cache key
+        let cache_key = format!("report:{}:{}:{}", 
+            template_id,
+            format!("{:?}", format),
+            request_id
+        );
+        
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &result, Some(self.config.cache_ttl_seconds)).await?;
+            // Serialize the result
+            let serialized = serde_json::to_vec(&result)?;
+            self.cache.set_binary(cache_key.clone(), serialized, Some(self.config.cache_ttl_seconds)).await?;
         }
         
         // Record in audit trail
@@ -475,6 +522,14 @@ impl VisualizationEngine {
                 format
             ),
             result: format!("report_generated"),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "report_generated".to_string(),
+            resource_id: cache_key.clone(),
+            resource_type: "report".to_string(),
+            operation: "generate".to_string(),
+            details: format!("Report generated for template {}", template_id),
+            status: "success".to_string(),
+            tenant_id: "system".to_string(),
         }).await?;
         
         Ok(result)
@@ -511,6 +566,14 @@ impl VisualizationEngine {
             user_id: "system".to_string(),
             parameters: format!("format={:?},row_count={}", format, data.len()),
             result: format!("export_generated"),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            event_type: "data_exported".to_string(),
+            resource_id: format!("format={:?},row_count={}", format, data.len()),
+            resource_type: "export".to_string(),
+            operation: "generate".to_string(),
+            details: format!("Data exported in format {:?}", format),
+            status: "success".to_string(),
+            tenant_id: "system".to_string(),
         }).await?;
         
         Ok(export_data)

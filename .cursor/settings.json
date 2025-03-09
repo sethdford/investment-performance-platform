@@ -1,0 +1,55 @@
+{
+  "projectRules": {
+    "enabled": true,
+    "rulesDirectory": ".cursor/rules"
+  },
+  "linting": {
+    "enabled": true,
+    "enabledRules": [
+      "use-descriptive-variable-names",
+      "follow-rust-naming-conventions",
+      "avoid-magic-numbers",
+      "document-public-items",
+      "use-result-for-fallible-operations",
+      "avoid-unwrap",
+      "use-question-mark-operator",
+      "prefer-async-await",
+      "use-tokio-for-async",
+      "document-unsafe-code",
+      "use-constants-for-configuration",
+      "implement-error-types",
+      "use-structured-concurrency",
+      "handle-task-cancellation",
+      "use-bounded-channels",
+      "avoid-blocking-in-async",
+      "use-async-mutex",
+      "implement-timeouts",
+      "use-tokio-test"
+    ]
+  },
+  "rust": {
+    "analyzer": {
+      "checkOnSave": true,
+      "procMacro": {
+        "enable": true
+      },
+      "cargo": {
+        "allFeatures": true,
+        "loadOutDirsFromCheck": true
+      }
+    }
+  },
+  "editor": {
+    "formatOnSave": true,
+    "formatOnType": true,
+    "tabSize": 4,
+    "insertSpaces": true
+  },
+  "performance": {
+    "caching": {
+      "enable": true,
+      "maxCacheSize": "512MB",
+      "cacheDuration": "24h"
+    }
+  }
+} 

@@ -272,10 +272,19 @@ pub fn calculate_irr(
         
         for i in 0..amounts.len() {
             let t = Decimal::from(days[i]) / Decimal::from(365); // Time in years
-            let factor = (Decimal::ONE + rate).powf(t.to_f64().unwrap());
+            
+            // Convert to f64 for power calculation, then back to Decimal
+            let t_f64 = t.to_f64().unwrap();
+            let rate_f64 = rate.to_f64().unwrap();
+            let factor_f64 = (1.0 + rate_f64).powf(t_f64);
+            let factor = Decimal::from_f64(factor_f64).unwrap();
             
             npv += amounts[i] / factor;
-            derivative -= amounts[i] * t / ((Decimal::ONE + rate).powf(t.to_f64().unwrap() + 1.0));
+            
+            // Calculate derivative using f64
+            let derivative_term_f64 = amounts[i].to_f64().unwrap() * t_f64 / ((1.0 + rate_f64).powf(t_f64 + 1.0));
+            let derivative_term = Decimal::from_f64(derivative_term_f64).unwrap();
+            derivative -= derivative_term;
         }
         
         if derivative == Decimal::ZERO {

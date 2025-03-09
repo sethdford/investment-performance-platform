@@ -1,5 +1,5 @@
 use aws_sdk_dynamodb::{Client as DynamoDbClient, Error as DynamoDbError};
-use aws_sdk_dynamodb::model::AttributeValue;
+use aws_sdk_dynamodb::types::AttributeValue;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::env;
@@ -26,7 +26,7 @@ impl DynamoDbTenantManager {
     
     /// Create a new DynamoDbTenantManager from environment variables
     pub async fn from_env() -> Result<Self, CalculationError> {
-        let config = aws_config::load_from_env().await;
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = DynamoDbClient::new(&config);
         
         let table_name = env::var("DYNAMODB_TABLE")
@@ -118,7 +118,7 @@ impl DynamoDbTenantManager {
         // Extract description (optional)
         let description = item.get("description")
             .and_then(|v| {
-                if v.as_null().is_some() {
+                if v.as_null().is_ok() {
                     None
                 } else {
                     v.as_s().ok()

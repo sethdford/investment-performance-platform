@@ -5,11 +5,11 @@ use tokio::task;
 use tracing::{info, warn};
 
 /// Process a batch of items in parallel with a maximum concurrency limit
-pub async fn process_batch<T, F, Fut, R>(
+pub async fn process_batch<'a, T, F, Fut, R>(
     items: Vec<T>,
     max_concurrency: usize,
     process_fn: F,
-    request_id: &str,
+    request_id: &'a str,
 ) -> Result<Vec<R>>
 where
     T: Send + Sync + 'static,
@@ -77,10 +77,10 @@ where
 }
 
 /// Process a batch of portfolio IDs in parallel
-pub async fn process_portfolios<F, Fut, R>(
+pub async fn process_portfolios<'a, F, Fut, R>(
     portfolio_ids: Vec<String>,
     process_fn: F,
-    request_id: &str,
+    request_id: &'a str,
 ) -> Result<Vec<R>>
 where
     R: Send + 'static,

@@ -38,7 +38,7 @@ pub struct PeriodicReturn {
 
 /// Calculate monthly returns from a return series
 pub fn calculate_monthly_returns(return_series: &ReturnSeries) -> Result<Vec<PeriodicReturn>> {
-    if return_series.dates.len() != return_series.returns.len() {
+    if return_series.dates.len() != return_series.values.len() {
         return Err(anyhow!("Return series has inconsistent lengths"));
     }
     
@@ -51,36 +51,29 @@ pub fn calculate_monthly_returns(return_series: &ReturnSeries) -> Result<Vec<Per
     
     for i in 0..return_series.dates.len() {
         let date = return_series.dates[i];
-        let return_value = return_series.returns[i];
+        let return_value = return_series.values[i];
         
-        let year = date.year();
-        let month = date.month();
-        let key = (year, month);
+        // Create a key for the month (year-month)
+        let month_key = format!("{}-{:02}", date.year(), date.month());
         
-        monthly_returns.entry(key)
-            .or_insert_with(Vec::new)
-            .push((date, return_value));
+        // Store the first and last date and accumulate returns for each month
+        monthly_returns.entry(month_key).or_insert_with(|| {
+            (date, date, Decimal::ONE)
+        }).2 *= Decimal::ONE + return_value;
     }
     
     // Calculate return for each month
     let mut results = Vec::new();
     
-    for ((year, month), values) in monthly_returns {
-        if values.is_empty() {
+    for (month_key, (start_date, end_date, cumulative_return)) in monthly_returns {
+        if cumulative_return == Decimal::ONE {
             continue;
         }
         
-        // Sort by date
-        let mut sorted_values = values;
-        sorted_values.sort_by(|a, b| a.0.cmp(&b.0));
-        
-        // Get start and end dates
-        let start_date = sorted_values.first().unwrap().0;
-        let end_date = sorted_values.last().unwrap().0;
-        
-        // Calculate cumulative return for the month
-        let cumulative_return = sorted_values.iter()
-            .fold(Decimal::ONE, |acc, (_, r)| acc * (Decimal::ONE + *r)) - Decimal::ONE;
+        // Parse year and month from the key
+        let parts: Vec<&str> = month_key.split('-').collect();
+        let year: i32 = parts[0].parse().unwrap();
+        let month: u32 = parts[1].parse().unwrap();
         
         // Create month label
         let month_name = match month {
@@ -96,7 +89,7 @@ pub fn calculate_monthly_returns(return_series: &ReturnSeries) -> Result<Vec<Per
             label,
             start_date,
             end_date,
-            return_value: cumulative_return,
+            return_value: cumulative_return - Decimal::ONE,
         });
     }
     
@@ -108,7 +101,7 @@ pub fn calculate_monthly_returns(return_series: &ReturnSeries) -> Result<Vec<Per
 
 /// Calculate quarterly returns from a return series
 pub fn calculate_quarterly_returns(return_series: &ReturnSeries) -> Result<Vec<PeriodicReturn>> {
-    if return_series.dates.len() != return_series.returns.len() {
+    if return_series.dates.len() != return_series.values.len() {
         return Err(anyhow!("Return series has inconsistent lengths"));
     }
     
@@ -121,36 +114,33 @@ pub fn calculate_quarterly_returns(return_series: &ReturnSeries) -> Result<Vec<P
     
     for i in 0..return_series.dates.len() {
         let date = return_series.dates[i];
-        let return_value = return_series.returns[i];
+        let return_value = return_series.values[i];
         
-        let year = date.year();
+        // Determine quarter
         let quarter = (date.month() - 1) / 3 + 1;
-        let key = (year, quarter);
         
-        quarterly_returns.entry(key)
-            .or_insert_with(Vec::new)
-            .push((date, return_value));
+        // Create a key for the quarter (year-Q#)
+        let quarter_key = format!("{}-Q{}", date.year(), quarter);
+        
+        // Store the first and last date and accumulate returns for each quarter
+        quarterly_returns.entry(quarter_key).or_insert_with(|| {
+            (date, date, Decimal::ONE)
+        }).2 *= Decimal::ONE + return_value;
     }
     
     // Calculate return for each quarter
     let mut results = Vec::new();
     
-    for ((year, quarter), values) in quarterly_returns {
-        if values.is_empty() {
+    for (quarter_key, (start_date, end_date, cumulative_return)) in quarterly_returns {
+        if cumulative_return == Decimal::ONE {
             continue;
         }
         
-        // Sort by date
-        let mut sorted_values = values;
-        sorted_values.sort_by(|a, b| a.0.cmp(&b.0));
-        
-        // Get start and end dates
-        let start_date = sorted_values.first().unwrap().0;
-        let end_date = sorted_values.last().unwrap().0;
-        
-        // Calculate cumulative return for the quarter
-        let cumulative_return = sorted_values.iter()
-            .fold(Decimal::ONE, |acc, (_, r)| acc * (Decimal::ONE + *r)) - Decimal::ONE;
+        // Parse year and quarter from the key
+        let parts: Vec<&str> = quarter_key.split('-').collect();
+        let year: i32 = parts[0].parse().unwrap();
+        let quarter_str = parts[1].trim_start_matches('Q');
+        let quarter: u32 = quarter_str.parse().unwrap();
         
         // Create quarter label
         let label = format!("Q{} {}", quarter, year);
@@ -160,7 +150,7 @@ pub fn calculate_quarterly_returns(return_series: &ReturnSeries) -> Result<Vec<P
             label,
             start_date,
             end_date,
-            return_value: cumulative_return,
+            return_value: cumulative_return - Decimal::ONE,
         });
     }
     
@@ -172,7 +162,7 @@ pub fn calculate_quarterly_returns(return_series: &ReturnSeries) -> Result<Vec<P
 
 /// Calculate annual returns from a return series
 pub fn calculate_annual_returns(return_series: &ReturnSeries) -> Result<Vec<PeriodicReturn>> {
-    if return_series.dates.len() != return_series.returns.len() {
+    if return_series.dates.len() != return_series.values.len() {
         return Err(anyhow!("Return series has inconsistent lengths"));
     }
     
@@ -185,34 +175,27 @@ pub fn calculate_annual_returns(return_series: &ReturnSeries) -> Result<Vec<Peri
     
     for i in 0..return_series.dates.len() {
         let date = return_series.dates[i];
-        let return_value = return_series.returns[i];
+        let return_value = return_series.values[i];
         
-        let year = date.year();
+        // Create a key for the year
+        let year_key = format!("{}", date.year());
         
-        annual_returns.entry(year)
-            .or_insert_with(Vec::new)
-            .push((date, return_value));
+        // Store the first and last date and accumulate returns for each year
+        annual_returns.entry(year_key).or_insert_with(|| {
+            (date, date, Decimal::ONE)
+        }).2 *= Decimal::ONE + return_value;
     }
     
     // Calculate return for each year
     let mut results = Vec::new();
     
-    for (year, values) in annual_returns {
-        if values.is_empty() {
+    for (year_key, (start_date, end_date, cumulative_return)) in annual_returns {
+        if cumulative_return == Decimal::ONE {
             continue;
         }
         
-        // Sort by date
-        let mut sorted_values = values;
-        sorted_values.sort_by(|a, b| a.0.cmp(&b.0));
-        
-        // Get start and end dates
-        let start_date = sorted_values.first().unwrap().0;
-        let end_date = sorted_values.last().unwrap().0;
-        
-        // Calculate cumulative return for the year
-        let cumulative_return = sorted_values.iter()
-            .fold(Decimal::ONE, |acc, (_, r)| acc * (Decimal::ONE + *r)) - Decimal::ONE;
+        // Parse year from the key
+        let year: i32 = year_key.parse().unwrap();
         
         // Create year label
         let label = year.to_string();
@@ -222,7 +205,7 @@ pub fn calculate_annual_returns(return_series: &ReturnSeries) -> Result<Vec<Peri
             label,
             start_date,
             end_date,
-            return_value: cumulative_return,
+            return_value: cumulative_return - Decimal::ONE,
         });
     }
     
@@ -234,7 +217,7 @@ pub fn calculate_annual_returns(return_series: &ReturnSeries) -> Result<Vec<Peri
 
 /// Calculate year-to-date (YTD) return
 pub fn calculate_ytd_return(return_series: &ReturnSeries, as_of_date: Option<NaiveDate>) -> Result<Option<PeriodicReturn>> {
-    if return_series.dates.len() != return_series.returns.len() {
+    if return_series.dates.len() != return_series.values.len() {
         return Err(anyhow!("Return series has inconsistent lengths"));
     }
     
@@ -242,20 +225,18 @@ pub fn calculate_ytd_return(return_series: &ReturnSeries, as_of_date: Option<Nai
         return Ok(None);
     }
     
-    // Determine the as-of date (default to the last date in the series)
-    let as_of = as_of_date.unwrap_or_else(|| *return_series.dates.last().unwrap());
+    // Determine the as-of date (use the last date in the series if not provided)
+    let end_date = as_of_date.unwrap_or_else(|| *return_series.dates.last().unwrap());
     
-    // Get the year of the as-of date
-    let year = as_of.year();
-    
-    // Filter returns for the current year up to the as-of date
+    // Find the first date in the current year
+    let current_year = end_date.year();
     let mut ytd_values = Vec::new();
     
     for i in 0..return_series.dates.len() {
         let date = return_series.dates[i];
         
-        if date.year() == year && date <= as_of {
-            ytd_values.push((date, return_series.returns[i]));
+        if date.year() == current_year && date <= end_date {
+            ytd_values.push((date, return_series.values[i]));
         }
     }
     
@@ -275,7 +256,7 @@ pub fn calculate_ytd_return(return_series: &ReturnSeries, as_of_date: Option<Nai
         .fold(Decimal::ONE, |acc, (_, r)| acc * (Decimal::ONE + *r)) - Decimal::ONE;
     
     // Create YTD label
-    let label = format!("YTD {}", year);
+    let label = format!("YTD {}", current_year);
     
     Ok(Some(PeriodicReturn {
         period: Period::YTD,
@@ -288,7 +269,7 @@ pub fn calculate_ytd_return(return_series: &ReturnSeries, as_of_date: Option<Nai
 
 /// Calculate since inception return
 pub fn calculate_since_inception_return(return_series: &ReturnSeries) -> Result<Option<PeriodicReturn>> {
-    if return_series.dates.len() != return_series.returns.len() {
+    if return_series.dates.len() != return_series.values.len() {
         return Err(anyhow!("Return series has inconsistent lengths"));
     }
     
@@ -296,23 +277,23 @@ pub fn calculate_since_inception_return(return_series: &ReturnSeries) -> Result<
         return Ok(None);
     }
     
-    // Sort by date
+    // Sort dates and returns to ensure chronological order
     let mut sorted_dates = return_series.dates.clone();
-    let mut sorted_returns = return_series.returns.clone();
+    let mut sorted_values = return_series.values.clone();
     
     // Sort both arrays based on dates
-    let mut date_return_pairs: Vec<_> = sorted_dates.iter().cloned().zip(sorted_returns.iter().cloned()).collect();
-    date_return_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut date_return_pairs: Vec<_> = sorted_dates.iter().zip(sorted_values.iter()).collect();
+    date_return_pairs.sort_by_key(|&(date, _)| *date);
     
     // Unzip the sorted pairs
-    let (sorted_dates, sorted_returns): (Vec<_>, Vec<_>) = date_return_pairs.into_iter().unzip();
+    let (sorted_date_refs, sorted_return_refs): (Vec<&NaiveDate>, Vec<&Decimal>) = date_return_pairs.into_iter().unzip();
     
     // Get start and end dates
-    let start_date = sorted_dates.first().unwrap();
-    let end_date = sorted_dates.last().unwrap();
+    let start_date = *sorted_date_refs.first().unwrap();
+    let end_date = *sorted_date_refs.last().unwrap();
     
     // Calculate cumulative return since inception
-    let cumulative_return = sorted_returns.iter()
+    let cumulative_return = sorted_return_refs.iter()
         .fold(Decimal::ONE, |acc, r| acc * (Decimal::ONE + *r)) - Decimal::ONE;
     
     // Create since inception label
@@ -391,7 +372,7 @@ mod tests {
         
         let return_series = ReturnSeries {
             dates,
-            returns,
+            values: returns,
         };
         
         // Test monthly returns

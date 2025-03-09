@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc, NaiveDate};
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 use crate::calculations::error_handling::with_retry;
+use std::sync::Mutex;
 
 /// Currency code (ISO 4217)
 pub type CurrencyCode = String;
@@ -201,13 +202,12 @@ impl ExchangeRateProvider for RemoteExchangeRateProvider {
             let api_url = self.api_url.clone();
             let api_key = self.api_key.clone();
             let base = base_currency.clone();
-            let quote = quote_currency.clone();
-            let date_str = date.format("%Y-%m-%d").to_string();
+            let quote = quote_currency.clone(); // Clone once here
             
             async move {
                 let url = format!(
                     "{}/exchangerates?base={}&symbols={}&date={}&access_key={}",
-                    api_url, base, quote, date_str, api_key
+                    api_url, base, quote, date.format("%Y-%m-%d").to_string(), api_key
                 );
                 
                 let response = client.get(&url).send().await?;
@@ -222,6 +222,7 @@ impl ExchangeRateProvider for RemoteExchangeRateProvider {
                 let data: serde_json::Value = response.json().await?;
                 
                 // Extract rate from response
+                let quote_clone = quote.clone();
                 let rate_str = data["rates"][quote].as_str()
                     .ok_or_else(|| anyhow!("Rate not found in response"))?;
                 
@@ -230,7 +231,7 @@ impl ExchangeRateProvider for RemoteExchangeRateProvider {
                 
                 Ok(ExchangeRate {
                     base_currency: base,
-                    quote_currency: quote,
+                    quote_currency: quote_clone,
                     rate,
                     date,
                     source: "API".to_string(),
@@ -251,7 +252,8 @@ impl ExchangeRateProvider for RemoteExchangeRateProvider {
 /// Exchange rate provider that uses a local cache
 pub struct CachedExchangeRateProvider {
     delegate: Arc<dyn ExchangeRateProvider + Send + Sync>,
-    cache: Arc<crate::calculations::cache::CalculationCache<String, ExchangeRate>>,
+    cache: Mutex<HashMap<String, (ExchangeRate, DateTime<Utc>)>>,
+    ttl_seconds: i64,
 }
 
 impl CachedExchangeRateProvider {
@@ -262,7 +264,8 @@ impl CachedExchangeRateProvider {
     ) -> Self {
         Self {
             delegate,
-            cache: Arc::new(crate::calculations::cache::CalculationCache::new(ttl_seconds)),
+            cache: Mutex::new(HashMap::new()),
+            ttl_seconds,
         }
     }
     
@@ -272,12 +275,7 @@ impl CachedExchangeRateProvider {
         quote_currency: &CurrencyCode,
         date: NaiveDate,
     ) -> String {
-        format!(
-            "exchange_rate:{}:{}:{}",
-            base_currency,
-            quote_currency,
-            date.format("%Y-%m-%d")
-        )
+        format!("{}:{}:{}", base_currency, quote_currency, date.format("%Y-%m-%d"))
     }
 }
 
@@ -292,14 +290,28 @@ impl ExchangeRateProvider for CachedExchangeRateProvider {
     ) -> Result<ExchangeRate> {
         let cache_key = Self::generate_cache_key(base_currency, quote_currency, date);
         
-        let delegate = self.delegate.clone();
-        let base = base_currency.clone();
-        let quote = quote_currency.clone();
+        // Check cache first
+        {
+            let cache = self.cache.lock().unwrap();
+            if let Some((rate, cached_time)) = cache.get(&cache_key) {
+                // Check if cache entry is still valid
+                let elapsed = Utc::now().signed_duration_since(*cached_time).num_seconds();
+                if elapsed < self.ttl_seconds {
+                    return Ok(rate.clone());
+                }
+            }
+        }
         
-        // Try to get from cache, or compute if not present
-        self.cache.get_or_compute(cache_key, || async move {
-            delegate.get_exchange_rate(&base, &quote, date, request_id).await
-        }).await
+        // Cache miss or expired, get from delegate
+        let rate = self.delegate.get_exchange_rate(base_currency, quote_currency, date, request_id).await?;
+        
+        // Update cache with new value
+        {
+            let mut cache = self.cache.lock().unwrap();
+            cache.insert(cache_key, (rate.clone(), Utc::now()));
+        }
+        
+        Ok(rate)
     }
 }
 

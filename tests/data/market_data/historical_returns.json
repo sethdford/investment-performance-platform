@@ -1,0 +1,200 @@
+{
+  "data_source": "Sample Historical Market Data",
+  "last_updated": "2023-09-15T00:00:00Z",
+  "disclaimer": "This is sample data for testing purposes only. Do not use for actual investment decisions.",
+  "asset_classes": {
+    "us_large_cap_stocks": {
+      "name": "US Large Cap Stocks (S&P 500)",
+      "annual_returns": {
+        "1928-2022": {
+          "arithmetic_mean": 0.1170,
+          "geometric_mean": 0.0990,
+          "standard_deviation": 0.1950
+        },
+        "1970-2022": {
+          "arithmetic_mean": 0.1230,
+          "geometric_mean": 0.1080,
+          "standard_deviation": 0.1730
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.0930,
+          "geometric_mean": 0.0770,
+          "standard_deviation": 0.1830
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": -0.0438},
+        {"year": 2019, "return": 0.3149},
+        {"year": 2020, "return": 0.1840},
+        {"year": 2021, "return": 0.2889},
+        {"year": 2022, "return": -0.1811}
+      ]
+    },
+    "us_small_cap_stocks": {
+      "name": "US Small Cap Stocks (Russell 2000)",
+      "annual_returns": {
+        "1979-2022": {
+          "arithmetic_mean": 0.1250,
+          "geometric_mean": 0.1060,
+          "standard_deviation": 0.2010
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.0980,
+          "geometric_mean": 0.0780,
+          "standard_deviation": 0.2120
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": -0.1101},
+        {"year": 2019, "return": 0.2546},
+        {"year": 2020, "return": 0.1996},
+        {"year": 2021, "return": 0.1482},
+        {"year": 2022, "return": -0.2044}
+      ]
+    },
+    "international_developed_stocks": {
+      "name": "International Developed Stocks (MSCI EAFE)",
+      "annual_returns": {
+        "1970-2022": {
+          "arithmetic_mean": 0.1050,
+          "geometric_mean": 0.0880,
+          "standard_deviation": 0.1720
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.0680,
+          "geometric_mean": 0.0520,
+          "standard_deviation": 0.1830
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": -0.1343},
+        {"year": 2019, "return": 0.2250},
+        {"year": 2020, "return": 0.0801},
+        {"year": 2021, "return": 0.1126},
+        {"year": 2022, "return": -0.1421}
+      ]
+    },
+    "emerging_markets": {
+      "name": "Emerging Markets (MSCI EM)",
+      "annual_returns": {
+        "1988-2022": {
+          "arithmetic_mean": 0.1230,
+          "geometric_mean": 0.0980,
+          "standard_deviation": 0.2380
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.1050,
+          "geometric_mean": 0.0810,
+          "standard_deviation": 0.2320
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": -0.1426},
+        {"year": 2019, "return": 0.1878},
+        {"year": 2020, "return": 0.1831},
+        {"year": 2021, "return": -0.0250},
+        {"year": 2022, "return": -0.1937}
+      ]
+    },
+    "us_bonds": {
+      "name": "US Bonds (Bloomberg US Aggregate)",
+      "annual_returns": {
+        "1976-2022": {
+          "arithmetic_mean": 0.0710,
+          "geometric_mean": 0.0690,
+          "standard_deviation": 0.0550
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.0450,
+          "geometric_mean": 0.0440,
+          "standard_deviation": 0.0380
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": 0.0001},
+        {"year": 2019, "return": 0.0872},
+        {"year": 2020, "return": 0.0751},
+        {"year": 2021, "return": -0.0154},
+        {"year": 2022, "return": -0.1301}
+      ]
+    },
+    "treasury_bills": {
+      "name": "US Treasury Bills (3-Month)",
+      "annual_returns": {
+        "1928-2022": {
+          "arithmetic_mean": 0.0340,
+          "geometric_mean": 0.0340,
+          "standard_deviation": 0.0030
+        },
+        "1970-2022": {
+          "arithmetic_mean": 0.0440,
+          "geometric_mean": 0.0440,
+          "standard_deviation": 0.0030
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.0160,
+          "geometric_mean": 0.0160,
+          "standard_deviation": 0.0020
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": 0.0186},
+        {"year": 2019, "return": 0.0221},
+        {"year": 2020, "return": 0.0058},
+        {"year": 2021, "return": 0.0004},
+        {"year": 2022, "return": 0.0153}
+      ]
+    },
+    "inflation": {
+      "name": "US Inflation (CPI)",
+      "annual_returns": {
+        "1928-2022": {
+          "arithmetic_mean": 0.0310,
+          "geometric_mean": 0.0300,
+          "standard_deviation": 0.0040
+        },
+        "1970-2022": {
+          "arithmetic_mean": 0.0400,
+          "geometric_mean": 0.0390,
+          "standard_deviation": 0.0030
+        },
+        "2000-2022": {
+          "arithmetic_mean": 0.0240,
+          "geometric_mean": 0.0240,
+          "standard_deviation": 0.0010
+        }
+      },
+      "yearly_data": [
+        {"year": 2018, "return": 0.0244},
+        {"year": 2019, "return": 0.0181},
+        {"year": 2020, "return": 0.0124},
+        {"year": 2021, "return": 0.0701},
+        {"year": 2022, "return": 0.0654}
+      ]
+    }
+  },
+  "correlation_matrix": {
+    "time_period": "2000-2022",
+    "assets": ["us_large_cap_stocks", "us_small_cap_stocks", "international_developed_stocks", "emerging_markets", "us_bonds", "treasury_bills", "inflation"],
+    "matrix": [
+      [1.00, 0.94, 0.89, 0.79, -0.29, -0.03, -0.08],
+      [0.94, 1.00, 0.83, 0.77, -0.31, -0.08, -0.06],
+      [0.89, 0.83, 1.00, 0.90, -0.22, -0.10, -0.02],
+      [0.79, 0.77, 0.90, 1.00, -0.17, -0.15, 0.14],
+      [-0.29, -0.31, -0.22, -0.17, 1.00, 0.24, -0.36],
+      [-0.03, -0.08, -0.10, -0.15, 0.24, 1.00, -0.43],
+      [-0.08, -0.06, -0.02, 0.14, -0.36, -0.43, 1.00]
+    ]
+  },
+  "efficient_frontier": {
+    "portfolios": [
+      {"risk": 0.0380, "return": 0.0440, "weights": {"us_large_cap_stocks": 0.00, "us_small_cap_stocks": 0.00, "international_developed_stocks": 0.00, "emerging_markets": 0.00, "us_bonds": 1.00, "treasury_bills": 0.00}},
+      {"risk": 0.0500, "return": 0.0520, "weights": {"us_large_cap_stocks": 0.10, "us_small_cap_stocks": 0.00, "international_developed_stocks": 0.00, "emerging_markets": 0.00, "us_bonds": 0.90, "treasury_bills": 0.00}},
+      {"risk": 0.0750, "return": 0.0580, "weights": {"us_large_cap_stocks": 0.20, "us_small_cap_stocks": 0.05, "international_developed_stocks": 0.05, "emerging_markets": 0.00, "us_bonds": 0.70, "treasury_bills": 0.00}},
+      {"risk": 0.1000, "return": 0.0630, "weights": {"us_large_cap_stocks": 0.30, "us_small_cap_stocks": 0.10, "international_developed_stocks": 0.10, "emerging_markets": 0.00, "us_bonds": 0.50, "treasury_bills": 0.00}},
+      {"risk": 0.1250, "return": 0.0680, "weights": {"us_large_cap_stocks": 0.40, "us_small_cap_stocks": 0.15, "international_developed_stocks": 0.15, "emerging_markets": 0.00, "us_bonds": 0.30, "treasury_bills": 0.00}},
+      {"risk": 0.1500, "return": 0.0720, "weights": {"us_large_cap_stocks": 0.45, "us_small_cap_stocks": 0.20, "international_developed_stocks": 0.20, "emerging_markets": 0.05, "us_bonds": 0.10, "treasury_bills": 0.00}},
+      {"risk": 0.1750, "return": 0.0750, "weights": {"us_large_cap_stocks": 0.45, "us_small_cap_stocks": 0.25, "international_developed_stocks": 0.20, "emerging_markets": 0.10, "us_bonds": 0.00, "treasury_bills": 0.00}}
+    ]
+  }
+} 

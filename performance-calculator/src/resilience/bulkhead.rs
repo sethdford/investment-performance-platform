@@ -6,18 +6,39 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio::time::timeout;
 use tracing::{info, warn, error};
 use thiserror::Error;
+use std::error::Error;
+use std::fmt::Debug;
+use std::pin::Pin;
+use std::future::Future;
 
-/// Bulkhead error
-#[derive(Error, Debug)]
+/// Bulkhead error types
+#[derive(Debug)]
 pub enum BulkheadError<E> {
-    #[error("Bulkhead is full")]
+    /// Bulkhead is full
     Full,
-    
-    #[error("Bulkhead operation timed out")]
+    /// Operation timed out
     Timeout,
-    
-    #[error("Underlying operation error: {0}")]
+    /// Operation error
     OperationError(E),
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for BulkheadError<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            BulkheadError::OperationError(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for BulkheadError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BulkheadError::Full => write!(f, "Bulkhead is full"),
+            BulkheadError::Timeout => write!(f, "Operation timed out"),
+            BulkheadError::OperationError(e) => write!(f, "Operation error: {}", e),
+        }
+    }
 }
 
 /// Bulkhead configuration
@@ -82,44 +103,45 @@ impl Default for BulkheadMetrics {
     }
 }
 
-/// Bulkhead trait
-#[async_trait]
-pub trait Bulkhead<T, E> {
-    /// Execute a function with bulkhead protection
-    async fn execute<F, Fut>(&self, f: F) -> Result<T, BulkheadError<E>>
-    where
-        F: FnOnce() -> Fut + Send,
-        Fut: std::future::Future<Output = Result<T, E>> + Send;
-    
-    /// Get current bulkhead metrics
-    fn metrics(&self) -> BulkheadMetrics;
-    
-    /// Reset the bulkhead metrics
-    fn reset_metrics(&self);
+/// Bulkhead trait for limiting concurrent operations
+pub trait Bulkhead: Send + Sync {
+    type Permit: Send;
+    type Future: Future<Output = Result<Self::Permit, BulkheadError<Box<dyn Error + Send + Sync>>>> + Send;
+
+    fn acquire(&self) -> Self::Future;
+    fn release(&self, permit: Self::Permit);
 }
 
 /// Standard bulkhead implementation
 pub struct StandardBulkhead {
+    name: String,
     config: BulkheadConfig,
-    execution_semaphore: Semaphore,
-    queue_semaphore: Semaphore,
+    execution_semaphore: Arc<Semaphore>,
+    queue_semaphore: Arc<Semaphore>,
     metrics: Arc<Mutex<BulkheadMetrics>>,
 }
 
 impl StandardBulkhead {
-    /// Create a new bulkhead
-    pub fn new(config: BulkheadConfig) -> Self {
+    /// Create a new bulkhead with custom configuration
+    pub fn new(name: String, config: BulkheadConfig) -> Self {
         Self {
-            execution_semaphore: Semaphore::new(config.max_concurrent_calls),
-            queue_semaphore: Semaphore::new(config.max_concurrent_calls + config.max_queue_size),
+            name,
+            execution_semaphore: Arc::new(Semaphore::new(config.max_concurrent_calls)),
+            queue_semaphore: Arc::new(Semaphore::new(config.max_concurrent_calls + config.max_queue_size)),
             metrics: Arc::new(Mutex::new(BulkheadMetrics::default())),
             config,
         }
     }
     
     /// Create a new bulkhead with default configuration
-    pub fn default() -> Self {
-        Self::new(BulkheadConfig::default())
+    pub fn default(name: String) -> Self {
+        Self::new(name, BulkheadConfig::default())
+    }
+    
+    /// Reset metrics for this bulkhead
+    pub fn reset_metrics(&self) {
+        let mut metrics = self.metrics.lock().unwrap();
+        *metrics = BulkheadMetrics::default();
     }
     
     /// Acquire a permit from the queue semaphore
@@ -177,64 +199,92 @@ impl StandardBulkhead {
     }
 }
 
-#[async_trait]
-impl<T, E> Bulkhead<T, E> for StandardBulkhead
-where
-    T: Send,
-    E: std::error::Error + Send + Sync + 'static,
-{
-    async fn execute<F, Fut>(&self, f: F) -> Result<T, BulkheadError<E>>
+impl Bulkhead for StandardBulkhead {
+    type Permit = SemaphorePermit<'static>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Permit, BulkheadError<Box<dyn Error + Send + Sync>>>> + Send>>;
+
+    fn acquire(&self) -> Self::Future {
+        let execution_semaphore = self.execution_semaphore.clone();
+        let metrics = self.metrics.clone();
+        let name = self.name.clone();
+        
+        Box::pin(async move {
+            match execution_semaphore.try_acquire() {
+                Ok(permit) => {
+                    // Update metrics
+                    let mut metrics_guard = metrics.lock().unwrap();
+                    metrics_guard.concurrent_executions += 1;
+                    metrics_guard.last_execution = Some(Instant::now());
+                    
+                    // Convert to 'static lifetime - this is safe because the permit will be dropped
+                    // before the semaphore is dropped
+                    let permit = unsafe { std::mem::transmute(permit) };
+                    Ok(permit)
+                },
+                Err(_) => {
+                    warn!("Bulkhead {} is full", name);
+                    Err(BulkheadError::Full)
+                }
+            }
+        })
+    }
+
+    fn release(&self, _permit: Self::Permit) {
+        // The permit is automatically released when dropped
+        let mut metrics = self.metrics.lock().unwrap();
+        metrics.concurrent_executions -= 1;
+    }
+}
+
+impl StandardBulkhead {
+    pub async fn execute<F, Fut, T, E>(&self, operation: F) -> Result<T, BulkheadError<E>>
     where
         F: FnOnce() -> Fut + Send,
         Fut: std::future::Future<Output = Result<T, E>> + Send,
+        T: Send,
+        E: Error + Send + Sync + 'static,
     {
         // Try to acquire a queue permit
         let _queue_permit = match self.acquire_queue_permit().await {
             Some(permit) => permit,
-            None => return Err(BulkheadError::Full),
+            None => {
+                warn!("Bulkhead {} queue is full", self.name);
+                return Err(BulkheadError::Full);
+            }
         };
         
         // Try to acquire an execution permit
         let _execution_permit = match self.acquire_execution_permit().await {
             Some(permit) => permit,
-            None => return Err(BulkheadError::Full),
+            None => {
+                warn!("Bulkhead {} execution semaphore is full", self.name);
+                return Err(BulkheadError::Full);
+            }
         };
         
-        // Execute the function with timeout
-        match timeout(
-            Duration::from_secs(self.config.execution_timeout_seconds),
-            f(),
-        ).await {
-            Ok(Ok(result)) => {
-                // Record success
-                self.record_success();
-                Ok(result)
-            },
-            Ok(Err(err)) => {
-                // Record failure
-                self.record_failure();
-                Err(BulkheadError::OperationError(err))
-            },
+        info!("Acquired permits for bulkhead {}", self.name);
+        
+        // Execute the operation with timeout
+        let timeout_duration = Duration::from_secs(self.config.execution_timeout_seconds);
+        match timeout(timeout_duration, operation()).await {
+            Ok(result) => {
+                match result {
+                    Ok(value) => {
+                        self.record_success();
+                        Ok(value)
+                    }
+                    Err(error) => {
+                        self.record_failure();
+                        Err(BulkheadError::OperationError(error))
+                    }
+                }
+            }
             Err(_) => {
-                // Record timeout
                 self.record_timeout();
+                warn!("Operation timed out in bulkhead {}", self.name);
                 Err(BulkheadError::Timeout)
-            },
+            }
         }
-    }
-    
-    fn metrics(&self) -> BulkheadMetrics {
-        self.metrics.lock().unwrap().clone()
-    }
-    
-    fn reset_metrics(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
-        *metrics = BulkheadMetrics {
-            concurrent_executions: metrics.concurrent_executions,
-            queue_size: metrics.queue_size,
-            ..BulkheadMetrics::default()
-        };
-        info!("Bulkhead metrics reset");
     }
 }
 
@@ -263,12 +313,13 @@ impl TenantBulkheadRegistry {
     /// Set the configuration for a specific tenant
     pub fn set_tenant_config(&self, tenant_id: &str, config: BulkheadConfig) {
         let mut tenant_configs = self.tenant_configs.lock().unwrap();
-        tenant_configs.insert(tenant_id.to_string(), config);
+        tenant_configs.insert(tenant_id.to_string(), config.clone());
         
         // If the bulkhead already exists, recreate it with the new config
         let mut bulkheads = self.bulkheads.lock().unwrap();
         if bulkheads.contains_key(tenant_id) {
-            bulkheads.insert(tenant_id.to_string(), Arc::new(StandardBulkhead::new(config)));
+            let config_for_bulkhead = config.clone();
+            bulkheads.insert(tenant_id.to_string(), Arc::new(StandardBulkhead::new(tenant_id.to_string(), config_for_bulkhead)));
         }
     }
     
@@ -288,7 +339,7 @@ impl TenantBulkheadRegistry {
             bulkhead.clone()
         } else {
             let config = self.get_tenant_config(tenant_id);
-            let bulkhead = Arc::new(StandardBulkhead::new(config));
+            let bulkhead = Arc::new(StandardBulkhead::new(tenant_id.to_string(), config));
             bulkheads.insert(tenant_id.to_string(), bulkhead.clone());
             bulkhead
         }
@@ -306,7 +357,7 @@ impl TenantBulkheadRegistry {
         
         for (tenant_id, bulkhead) in bulkheads.iter() {
             info!("Resetting bulkhead metrics for tenant: {}", tenant_id);
-            bulkhead.reset_metrics();
+            bulkhead.as_ref().reset_metrics();
         }
     }
     
@@ -339,7 +390,16 @@ pub fn get_tenant_bulkhead(tenant_id: &str) -> Arc<StandardBulkhead> {
     get_tenant_bulkhead_registry().get_or_create(tenant_id)
 }
 
-/// Set the configuration for a specific tenant in the global registry
+/// Get a bulkhead for a specific service
+pub fn get_bulkhead(service_name: &str) -> Result<Arc<StandardBulkhead>, String> {
+    // For now, just create a new bulkhead with default config
+    Ok(Arc::new(StandardBulkhead::new(
+        service_name.to_string(),
+        BulkheadConfig::default()
+    )))
+}
+
+/// Set the configuration for a specific tenant
 pub fn set_tenant_bulkhead_config(tenant_id: &str, config: BulkheadConfig) {
     get_tenant_bulkhead_registry().set_tenant_config(tenant_id, config);
 }
@@ -374,4 +434,11 @@ pub fn configure_tenant_bulkheads_from_tier(
     };
     
     set_tenant_bulkhead_config(tenant_id, config);
+}
+
+/// Check if combined protection (circuit breaker + bulkhead) should be used
+pub fn should_use_combined_protection() -> bool {
+    // This could be based on configuration or environment variables
+    // For now, just return true
+    true
 } 

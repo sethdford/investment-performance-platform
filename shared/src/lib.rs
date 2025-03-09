@@ -10,12 +10,14 @@
 /// * `error` - Error handling
 /// * `config` - Configuration management
 /// * `validation` - Data validation utilities and implementations
+/// * `visualization` - Chart generation and visualization services
 
 pub mod models;
 pub mod repository;
 pub mod error;
 pub mod config;
 pub mod validation;
+pub mod visualization;
 
 // Re-export common types
 pub use error::AppError;

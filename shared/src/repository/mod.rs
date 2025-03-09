@@ -3,16 +3,17 @@
 //! This module provides repository implementations for accessing data from various sources.
 //! It includes a DynamoDB repository and a cached version with TTL-based caching.
 
-mod dynamodb;
-mod cached;
+pub mod dynamodb;
+pub mod cached;
+pub mod timestream;
 
 pub use dynamodb::DynamoDbRepository;
 pub use cached::CachedDynamoDbRepository;
+pub use timestream::TimestreamRepository;
 
 use async_trait::async_trait;
 use crate::models::{Portfolio, Transaction, Account, Security, Client, Benchmark, Price, Position};
 use crate::error::AppError;
-use std::collections::HashMap;
 
 /// Pagination options for repository queries
 #[derive(Debug, Clone)]
@@ -41,7 +42,7 @@ pub trait Repository {
     /// List portfolios with optional filtering and pagination
     async fn list_portfolios(
         &self, 
-        client_id: Option<&str>,
+        client_id: Option<&'_ str>,
         pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Portfolio>, AppError>;
     
@@ -57,7 +58,7 @@ pub trait Repository {
     /// List transactions with optional filtering and pagination
     async fn list_transactions(
         &self,
-        account_id: Option<&str>,
+        account_id: Option<&'_ str>,
         pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Transaction>, AppError>;
     
@@ -73,7 +74,7 @@ pub trait Repository {
     /// List accounts with optional filtering and pagination
     async fn list_accounts(
         &self,
-        portfolio_id: Option<&str>,
+        portfolio_id: Option<&'_ str>,
         pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Account>, AppError>;
     
@@ -135,8 +136,8 @@ pub trait Repository {
     async fn list_prices(
         &self,
         security_id: &str,
-        start_date: Option<&str>,
-        end_date: Option<&str>,
+        start_date: Option<&'_ str>,
+        end_date: Option<&'_ str>,
         pagination: Option<PaginationOptions>
     ) -> Result<PaginatedResult<Price>, AppError>;
     

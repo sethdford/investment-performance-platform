@@ -1,0 +1,26 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+                <style>
+                    .title { font-size: 24px; font-family: Arial; text-anchor: middle; }
+                    .factor { font-size: 14px; font-family: Arial; text-anchor: end; }
+                    .value { font-size: 14px; font-family: Arial; text-anchor: middle; }
+                </style>
+                <text x="400" y="30" class="title">Factor Exposure Analysis</text>
+            <text x="150" y="100" class="factor">growth</text>
+                   <rect x="180" y="80" width="100" height="30" fill="rgb(255,230,230)" stroke="black" />
+                   <text x="230" y="100" class="value">0.10</text>
+                <text x="150" y="140" class="factor">value</text>
+                   <rect x="180" y="120" width="100" height="30" fill="rgb(255,128,128)" stroke="black" />
+                   <text x="230" y="140" class="value">0.50</text>
+                <text x="150" y="180" class="factor">size</text>
+                   <rect x="180" y="160" width="100" height="30" fill="rgb(204,204,255)" stroke="black" />
+                   <text x="230" y="180" class="value">-0.20</text>
+                <text x="150" y="220" class="factor">quality</text>
+                   <rect x="180" y="200" width="100" height="30" fill="rgb(255,77,77)" stroke="black" />
+                   <text x="230" y="220" class="value">0.70</text>
+                <text x="150" y="260" class="factor">volatility</text>
+                   <rect x="180" y="240" width="100" height="30" fill="rgb(153,153,255)" stroke="black" />
+                   <text x="230" y="260" class="value">-0.40</text>
+                <text x="150" y="300" class="factor">momentum</text>
+                   <rect x="180" y="280" width="100" height="30" fill="rgb(255,179,179)" stroke="black" />
+                   <text x="230" y="300" class="value">0.30</text>
+                </svg>

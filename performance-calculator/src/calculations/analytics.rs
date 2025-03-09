@@ -10,9 +10,10 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use std::sync::Arc;
+use serde_json;
 
 use crate::calculations::audit::AuditTrail;
-use crate::calculations::distributed_cache::Cache;
+use crate::calculations::distributed_cache::{Cache, TypedCache};
 
 /// Configuration for the Analytics module
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,12 +218,12 @@ impl AnalyticsEngine {
             portfolio_id,
             start_date,
             end_date,
-            factor_ids.as_ref().map_or("all", |ids| ids.join(",").as_str())
+            factor_ids.as_ref().map_or("all".to_string(), |ids| ids.join(","))
         );
         
         // Try to get from cache
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<FactorAnalysisResult>(&cache_key).await? {
+            if let Some(cached_result) = self.cache.get_typed::<FactorAnalysisResult>(&cache_key).await? {
                 // Record cache hit in audit trail
                 self.audit_trail.record(crate::calculations::audit::AuditRecord {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -233,6 +234,15 @@ impl AnalyticsEngine {
                     user_id: "system".to_string(),
                     parameters: format!("start_date={},end_date={}", start_date, end_date),
                     result: format!("cached_result_found"),
+                    tenant_id: "default".to_string(),
+                    event_id: request_id.to_string(),
+                    event_type: "analytics".to_string(),
+                    resource_id: portfolio_id.to_string(),
+                    resource_type: "portfolio".to_string(),
+                    operation: "factor_analysis".to_string(),
+                    details: format!("Retrieved factor analysis from cache for portfolio {} from {} to {}", 
+                                    portfolio_id, start_date, end_date),
+                    status: "success".to_string(),
                 }).await?;
                 
                 return Ok(cached_result);
@@ -288,7 +298,7 @@ impl AnalyticsEngine {
         
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &result, Some(self.config.cache_ttl_seconds)).await?;
+            self.cache.set_typed(cache_key.clone(), &result, Some(self.config.cache_ttl_seconds)).await?;
         }
         
         // Record in audit trail
@@ -299,13 +309,17 @@ impl AnalyticsEngine {
             entity_type: "portfolio".to_string(),
             action: "factor_analysis".to_string(),
             user_id: "system".to_string(),
-            parameters: format!(
-                "start_date={},end_date={},factors={}",
-                start_date,
-                end_date,
-                selected_factors.iter().map(|f| f.id.clone()).collect::<Vec<_>>().join(",")
-            ),
-            result: format!("model_r_squared={}", result.model_r_squared),
+            parameters: format!("start_date={},end_date={}", start_date, end_date),
+            result: format!("r_squared={:.4}", result.model_r_squared),
+            tenant_id: "default".to_string(),
+            event_id: request_id.to_string(),
+            event_type: "analytics".to_string(),
+            resource_id: portfolio_id.to_string(),
+            resource_type: "portfolio".to_string(),
+            operation: "factor_analysis".to_string(),
+            details: format!("Performed factor analysis for portfolio {} from {} to {}", 
+                            portfolio_id, start_date, end_date),
+            status: "success".to_string(),
         }).await?;
         
         Ok(result)
@@ -334,7 +348,7 @@ impl AnalyticsEngine {
         
         // Try to get from cache
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<ScenarioAnalysisResult>(&cache_key).await? {
+            if let Some(cached_result) = self.cache.get_typed::<ScenarioAnalysisResult>(&cache_key).await? {
                 // Record cache hit in audit trail
                 self.audit_trail.record(crate::calculations::audit::AuditRecord {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -345,6 +359,15 @@ impl AnalyticsEngine {
                     user_id: "system".to_string(),
                     parameters: format!("scenario_id={},analysis_date={}", scenario_id, analysis_date),
                     result: format!("cached_result_found"),
+                    tenant_id: "default".to_string(),
+                    event_id: request_id.to_string(),
+                    event_type: "analytics".to_string(),
+                    resource_id: portfolio_id.to_string(),
+                    resource_type: "portfolio".to_string(),
+                    operation: "scenario_analysis".to_string(),
+                    details: format!("Retrieved scenario analysis from cache for portfolio {} and scenario {} on {}", 
+                                    portfolio_id, scenario_id, analysis_date),
+                    status: "success".to_string(),
                 }).await?;
                 
                 return Ok(cached_result);
@@ -373,7 +396,7 @@ impl AnalyticsEngine {
         
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &result, Some(self.config.cache_ttl_seconds)).await?;
+            self.cache.set_typed(cache_key.clone(), &result, Some(self.config.cache_ttl_seconds)).await?;
         }
         
         // Record in audit trail
@@ -384,12 +407,17 @@ impl AnalyticsEngine {
             entity_type: "portfolio".to_string(),
             action: "scenario_analysis".to_string(),
             user_id: "system".to_string(),
-            parameters: format!(
-                "scenario_id={},analysis_date={}",
-                scenario_id,
-                analysis_date
-            ),
-            result: format!("expected_return={}", result.expected_return),
+            parameters: format!("scenario_id={},analysis_date={}", scenario_id, analysis_date),
+            result: format!("expected_return={:.4}", result.expected_return),
+            tenant_id: "default".to_string(),
+            event_id: request_id.to_string(),
+            event_type: "analytics".to_string(),
+            resource_id: portfolio_id.to_string(),
+            resource_type: "portfolio".to_string(),
+            operation: "scenario_analysis".to_string(),
+            details: format!("Performed scenario analysis for portfolio {} with scenario {} on {}", 
+                            portfolio_id, scenario_id, analysis_date),
+            status: "success".to_string(),
         }).await?;
         
         Ok(result)
@@ -413,12 +441,12 @@ impl AnalyticsEngine {
             "analytics:risk:{}:{}:{}",
             portfolio_id,
             analysis_date,
-            factor_ids.as_ref().map_or("all", |ids| ids.join(",").as_str())
+            factor_ids.as_ref().map_or("all".to_string(), |ids| ids.join(","))
         );
         
         // Try to get from cache
         if self.config.enable_caching {
-            if let Some(cached_result) = self.cache.get::<RiskDecompositionResult>(&cache_key).await? {
+            if let Some(cached_result) = self.cache.get_typed::<RiskDecompositionResult>(&cache_key).await? {
                 // Record cache hit in audit trail
                 self.audit_trail.record(crate::calculations::audit::AuditRecord {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -429,6 +457,15 @@ impl AnalyticsEngine {
                     user_id: "system".to_string(),
                     parameters: format!("analysis_date={}", analysis_date),
                     result: format!("cached_result_found"),
+                    tenant_id: "default".to_string(),
+                    event_id: request_id.to_string(),
+                    event_type: "analytics".to_string(),
+                    resource_id: portfolio_id.to_string(),
+                    resource_type: "portfolio".to_string(),
+                    operation: "risk_decomposition".to_string(),
+                    details: format!("Retrieved risk decomposition from cache for portfolio {} on {}", 
+                                    portfolio_id, analysis_date),
+                    status: "success".to_string(),
                 }).await?;
                 
                 return Ok(cached_result);
@@ -486,7 +523,7 @@ impl AnalyticsEngine {
         
         // Cache the result
         if self.config.enable_caching {
-            self.cache.set(&cache_key, &result, Some(self.config.cache_ttl_seconds)).await?;
+            self.cache.set_typed(cache_key.clone(), &result, Some(self.config.cache_ttl_seconds)).await?;
         }
         
         // Record in audit trail
@@ -497,12 +534,17 @@ impl AnalyticsEngine {
             entity_type: "portfolio".to_string(),
             action: "risk_decomposition".to_string(),
             user_id: "system".to_string(),
-            parameters: format!(
-                "analysis_date={},factors={}",
-                analysis_date,
-                selected_factors.iter().map(|f| f.id.clone()).collect::<Vec<_>>().join(",")
-            ),
-            result: format!("total_risk={}", result.total_risk),
+            parameters: format!("analysis_date={}", analysis_date),
+            result: format!("total_risk={:.4}", result.total_risk),
+            tenant_id: "default".to_string(),
+            event_id: request_id.to_string(),
+            event_type: "analytics".to_string(),
+            resource_id: portfolio_id.to_string(),
+            resource_type: "portfolio".to_string(),
+            operation: "risk_decomposition".to_string(),
+            details: format!("Performed risk decomposition for portfolio {} on {}", 
+                            portfolio_id, analysis_date),
+            status: "success".to_string(),
         }).await?;
         
         Ok(result)

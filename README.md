@@ -1,109 +1,144 @@
-# Investment Performance Platform
+# Modern Conversational Financial Advisor
 
-A serverless Rust application for calculating investment portfolio performance metrics.
+A modern investment management platform powered by a human-level conversational financial advisor using emerging AI techniques.
 
 ## Overview
 
-The Investment Performance Platform is a high-performance, scalable system built on AWS serverless architecture. It provides APIs for managing investment portfolios, items, and transactions, and calculates various performance metrics such as Time-Weighted Return (TWR), Money-Weighted Return (MWR), volatility, Sharpe ratio, and more.
+This platform combines advanced financial modeling with state-of-the-art conversational AI to provide a comprehensive investment management solution. The system is designed to help financial advisors and individuals manage their investments more effectively, optimize tax strategies, and plan for financial goals.
+
+## Key Features
+
+### Conversational Financial Advisor
+
+- **Human-like Conversations**: Engage in natural, contextually-aware conversations about financial topics
+- **Enhanced Context Management**: Intelligently manages conversation context to maintain coherent and relevant discussions
+  - Context window management with token-based pruning
+  - Context relevance scoring based on topics and entities
+  - Context persistence with file-based storage
+- **Topic Detection**: Automatically identifies financial topics in conversations
+- **Entity Extraction**: Recognizes financial entities like accounts, amounts, and instruments
+- **Persistence**: Saves and loads conversation context across sessions
+
+### Financial Planning and Analysis
+
+- **Portfolio Management**: Create and manage model portfolios with sophisticated asset allocation
+- **Tax Optimization**: Implement tax-efficient strategies including tax-loss harvesting
+- **Retirement Planning**: Plan for retirement with dynamic withdrawal strategies and Monte Carlo simulations
+- **Goal-based Planning**: Set and track financial goals with personalized recommendations
+
+### Technical Capabilities
+
+- **AWS Bedrock Integration**: Leverages Claude 3 Sonnet for advanced NLP capabilities
+- **Knowledge Retrieval**: Accesses a comprehensive financial knowledge base for accurate information
+- **Context Window Management**: Intelligently manages the LLM context window for optimal performance
+- **Relevance Scoring**: Prioritizes the most relevant information for generating responses
 
 ## Architecture
 
-The application follows a serverless, event-driven architecture:
+The platform is built with a modular architecture that separates concerns and allows for easy extension:
 
-- **API Handler**: AWS Lambda function that processes API requests
-- **Event Processor**: AWS Lambda function that processes events from SQS
-- **Performance Calculator**: AWS Lambda function that calculates performance metrics
-- **Data Storage**: DynamoDB for entity data and Timestream for time-series metrics
-- **Message Queue**: SQS for asynchronous processing
-
-## Features
-
-- Portfolio management (create, read, update, delete)
-- Item management within portfolios
-- Transaction recording and management
-- Performance calculation with various methodologies
-- Batch calculation for multiple portfolios
-- Time series data for historical performance
-- Multi-tenant support with data isolation
-- Caching for improved performance
-- Comprehensive error handling and logging
+- **Conversation Module**: Manages conversations, context, and topic detection
+- **Financial Entities Module**: Handles entity extraction and financial data
+- **Financial Advisor Module**: Provides advanced NLP and financial knowledge capabilities
+- **Portfolio Module**: Manages investment portfolios and asset allocation
+- **Performance Calculator**: Calculates and analyzes investment performance
+- **Factor Model**: Implements factor-based analysis and asset allocation
 
 ## Getting Started
 
 ### Prerequisites
 
 - Rust 1.70 or later
-- AWS CLI
-- Terraform or AWS CloudFormation
-- Make
+- AWS account with Bedrock access (for enhanced NLP capabilities)
+- AWS credentials configured locally
 
 ### Installation
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/investment-performance-calculator.git
-   cd investment-performance-calculator
+   git clone https://github.com/example/modern-conversational-advisor.git
+   cd modern-conversational-advisor
    ```
 
-2. Build the application:
+2. Build the project:
    ```
-   make build
-   ```
-
-3. Deploy to AWS:
-   ```
-   make deploy-dev
+   cargo build --release
    ```
 
-## Documentation
+### Running the Application
 
-- [User Guide](docs/user-guide.md): Guide for API users
-- [Developer Guide](docs/developer-guide.md): Guide for developers
-- [API Reference](docs/api_reference.md): API documentation
-- [Security Hardening Guide](docs/security-hardening-guide.md): Security best practices
-- [Disaster Recovery Plan](docs/disaster-recovery-plan.md): Procedures for disaster recovery
-- [Cost Optimization Guide](docs/cost-optimization-guide.md): Cost optimization recommendations
+Run the main application:
+```
+cargo run --release
+```
+
+Or with basic mode (no LLM):
+```
+cargo run --release -- --basic
+```
+
+### Examples
+
+The project includes several examples to demonstrate key features:
+
+- **Financial Advisor Demo**: Demonstrates the core financial advisor capabilities
+  ```
+  cargo run --example financial_advisor_demo
+  ```
+
+- **Context Management Demo**: Showcases the enhanced context management features
+  ```
+  cargo run --example context_management_demo
+  ```
 
 ## Development
 
 ### Project Structure
 
-```
-.
-├── api-handler/            # API Handler Lambda function
-├── event-processor/        # Event Processor Lambda function
-├── performance-calculator/ # Performance Calculator Lambda function
-├── shared/                 # Shared code and utilities
-├── infrastructure/         # Infrastructure as Code (Terraform, CloudFormation)
-├── scripts/                # Utility scripts
-├── docs/                   # Documentation
-└── tests/                  # Tests
-```
+- `src/`: Main source code
+  - `conversation/`: Conversation management and context tracking
+  - `financial_entities/`: Financial entity extraction and management
+  - `financial_advisor/`: Advanced NLP and financial knowledge capabilities
+  - `portfolio/`: Portfolio management and investment tracking
+  - `factor_model/`: Factor model analysis and asset allocation
+  - `performance_calculator/`: Performance calculation and analysis
+  - `common/`: Common utilities and shared resources
+  - `visualization/`: Visualization tools and utilities
 
-### Building
+- `examples/`: Example applications demonstrating key features
+- `tests/`: Integration and unit tests
+- `docs/`: Documentation files
 
-```
-make build
-```
-
-### Testing
+### Running Tests
 
 ```
-make test
+cargo test
 ```
 
-### Deploying
+## Documentation
 
-```
-make deploy-dev    # Deploy to development environment
-make deploy-test   # Deploy to test environment
-make deploy-prod   # Deploy to production environment
-```
+Comprehensive documentation is available in the `docs/` directory:
+
+- [Vision and Mission](VISION.md): Our vision, mission, and strategic focus areas
+- [Enhanced Context Management](docs/ENHANCED_CONTEXT_MANAGEMENT.md): Details on the context management system
+- [Conversation Storage Implementation](docs/CONVERSATION_STORAGE_IMPLEMENTATION.md): Information on conversation persistence
+- [Financial Knowledge Base](docs/FINANCIAL_KNOWLEDGE_BASE.md): Documentation on the financial knowledge system
+
+## Recent Improvements
+
+- **Enhanced Context Management**: Implemented advanced context management with token-based pruning, relevance scoring, and persistence
+- **Consolidated Architecture**: Streamlined the codebase by consolidating the financial advisor and conversational advisor components
+- **Improved Error Handling**: Enhanced error handling throughout the application for better reliability
+- **Better Documentation**: Added comprehensive documentation for all major components
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the planned features and enhancements.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-This project is proprietary and confidential.
-
-## Contact
-
-For questions or support, please contact [your-email@example.com](mailto:your-email@example.com). 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

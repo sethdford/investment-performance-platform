@@ -133,7 +133,7 @@ impl Tenant {
             name: name.to_string(),
             description: description.map(|s| s.to_string()),
             status: TenantStatus::Active,
-            subscription_tier: tier,
+            subscription_tier: tier.clone(),
             resource_limits: match tier {
                 SubscriptionTier::Free => ResourceLimits {
                     max_portfolios: 5,

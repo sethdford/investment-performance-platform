@@ -224,11 +224,11 @@ pub fn get_chaos_service() -> &'static ChaosService {
     }
 }
 
-/// Enable chaos testing with the specified configuration
-pub fn enable_chaos_testing(config: ChaosConfig) {
+/// Enable chaos testing with the given configuration
+pub fn enable_chaos(config: ChaosConfig) {
     let mut cfg = config;
     cfg.enabled = true;
-    get_chaos_service().set_config(cfg);
+    get_chaos_service().set_config(cfg.clone());
     info!("Chaos testing enabled with configuration: {:?}", cfg);
 }
 
@@ -259,17 +259,17 @@ pub async fn with_chaos<T, E, F, Fut>(
 where
     F: FnOnce() -> Fut + Send,
     Fut: std::future::Future<Output = Result<T, E>> + Send,
-    E: std::error::Error + Send + Sync + 'static,
+    E: std::error::Error + From<std::io::Error> + Send + Sync + 'static,
 {
     // Maybe inject a delay
     maybe_inject_delay(service, tenant_id).await;
     
     // Maybe inject a failure
     if maybe_inject_failure(service, tenant_id) {
-        return Err(std::io::Error::new(
+        return Err(E::from(std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("Chaos-induced failure for service: {}", service),
-        ) as E);
+        )));
     }
     
     // Execute the operation

@@ -2,6 +2,44 @@ use anyhow::{Result, anyhow};
 use std::future::Future;
 use std::time::Duration;
 use tracing::{info, warn, error};
+use thiserror::Error;
+
+/// Error type for calculation operations
+#[derive(Error, Debug)]
+pub enum CalculationError {
+    #[error("Database error: {0}")]
+    Database(String),
+    
+    #[error("Internal error: {0}")]
+    Internal(String),
+    
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+    
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+    
+    #[error("Resource limit exceeded: {0}")]
+    ResourceLimitExceeded(String),
+    
+    #[error("Service error: {0}")]
+    Service(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Resource already exists: {0}")]
+    AlreadyExists(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+}
+
+impl From<String> for CalculationError {
+    fn from(error: String) -> Self {
+        CalculationError::Internal(error)
+    }
+}
 
 /// Retry configuration
 #[derive(Debug, Clone)]

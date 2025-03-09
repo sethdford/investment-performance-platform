@@ -1,11 +1,23 @@
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::{info, warn};
 use uuid::Uuid;
-use crate::calculations::error_handling::CalculationError;
+use aws_sdk_dynamodb::types::AttributeValue;
 use crate::calculations::tenant::{Tenant, ResourceLimits};
+use crate::calculations::error_handling::{CalculationError, RetryConfig, with_retry};
+use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::operation::{
+    put_item::PutItemInput,
+    get_item::GetItemInput,
+    query::QueryInput,
+    delete_item::DeleteItemInput,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use aws_config;
+use rust_decimal::Decimal;
+use std::sync::{Arc, RwLock};
+use shared::models::Portfolio;
 
 /// Tenant usage metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -483,7 +495,7 @@ impl TenantMetricsManager for InMemoryTenantMetricsManager {
 
 /// DynamoDB implementation of TenantMetricsManager
 pub struct DynamoDbTenantMetricsManager {
-    client: aws_sdk_dynamodb::Client,
+    client: DynamoDbClient,
     metrics_table_name: String,
     billing_table_name: String,
 }
@@ -491,7 +503,7 @@ pub struct DynamoDbTenantMetricsManager {
 impl DynamoDbTenantMetricsManager {
     /// Create a new DynamoDB tenant metrics manager
     pub fn new(
-        client: aws_sdk_dynamodb::Client,
+        client: DynamoDbClient,
         metrics_table_name: String,
         billing_table_name: String,
     ) -> Self {
@@ -504,8 +516,8 @@ impl DynamoDbTenantMetricsManager {
     
     /// Create a DynamoDB tenant metrics manager from environment variables
     pub async fn from_env() -> Result<Self, CalculationError> {
-        let config = aws_config::load_from_env().await;
-        let client = aws_sdk_dynamodb::Client::new(&config);
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let client = DynamoDbClient::new(&config);
         
         let metrics_table_name = std::env::var("TENANT_METRICS_TABLE")
             .unwrap_or_else(|_| "tenant-metrics".to_string());
@@ -520,102 +532,79 @@ impl DynamoDbTenantMetricsManager {
 #[async_trait::async_trait]
 impl TenantMetricsManager for DynamoDbTenantMetricsManager {
     async fn get_usage_metrics(&self, tenant_id: &str) -> Result<TenantUsageMetrics, CalculationError> {
-        // Get circuit breaker for DynamoDB
-        let circuit_breaker = crate::resilience::get_circuit_breaker("dynamodb-metrics", None);
+        // Implement a simple retry mechanism
+        let table_name = self.metrics_table_name.clone();
+        let tenant_id_value = tenant_id.to_string();
         
-        // Execute with circuit breaker protection
-        match circuit_breaker.execute(|| async {
-            // Create the key for the DynamoDB query
-            let key = aws_sdk_dynamodb::model::AttributeValue::S(tenant_id.to_string());
+        let max_attempts = 3;
+        let mut attempt = 0;
+        let mut last_error = None;
+        
+        loop {
+            attempt += 1;
             
-            // Query DynamoDB for the tenant metrics with retry
-            crate::resilience::retry_with_exponential_backoff(
-                || async {
-                    self.client.get_item()
-                        .table_name(&self.metrics_table_name)
-                        .key("tenant_id", key.clone())
-                        .send()
-                        .await
-                        .map_err(|e| CalculationError::Database(format!("Failed to get tenant metrics: {}", e)))
+            match self.client.get_item()
+                .table_name(&table_name)
+                .key("tenant_id", AttributeValue::S(tenant_id_value.clone()))
+                .send()
+                .await
+            {
+                Ok(result) => {
+                    // Parse the DynamoDB response into TenantUsageMetrics
+                    match result.item() {
+                        Some(item) => {
+                            let metrics = TenantUsageMetrics {
+                                tenant_id: tenant_id.to_string(),
+                                api_requests: item.get("api_requests")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<u32>().ok())
+                                    .unwrap_or(0),
+                                portfolio_count: item.get("portfolio_count")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<usize>().ok())
+                                    .unwrap_or(0),
+                                account_count: item.get("account_count")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<usize>().ok())
+                                    .unwrap_or(0),
+                                security_count: item.get("security_count")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<usize>().ok())
+                                    .unwrap_or(0),
+                                transaction_count: item.get("transaction_count")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<usize>().ok())
+                                    .unwrap_or(0),
+                                storage_usage_bytes: item.get("storage_usage_bytes")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<u64>().ok())
+                                    .unwrap_or(0),
+                                concurrent_calculations: item.get("concurrent_calculations")
+                                    .and_then(|v| v.as_n().ok())
+                                    .and_then(|n| n.parse::<usize>().ok())
+                                    .unwrap_or(0),
+                                updated_at: item.get("updated_at")
+                                    .and_then(|v| v.as_s().ok())
+                                    .and_then(|s| s.parse::<i64>().ok())
+                                    .map(|ts| DateTime::<Utc>::from_timestamp(ts, 0).unwrap_or_default())
+                                    .unwrap_or_default(),
+                            };
+                            return Ok(metrics);
+                        },
+                        None => return Err(CalculationError::NotFound(format!("Tenant metrics not found for tenant {}", tenant_id))),
+                    }
                 },
-                3,
-                100,
-            ).await.map_err(|e| match e {
-                crate::resilience::RetryError::MaxRetriesExceeded(e) => e,
-                crate::resilience::RetryError::Aborted(e) => e,
-            })
-        }).await {
-            Ok(result) => {
-                // If the item exists, convert it to TenantUsageMetrics
-                if let Some(item) = result.item() {
-                    // Extract values from the DynamoDB item
-                    let portfolio_count = item.get("portfolio_count")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .unwrap_or(0);
-                        
-                    let account_count = item.get("account_count")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .unwrap_or(0);
-                        
-                    let security_count = item.get("security_count")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .unwrap_or(0);
-                        
-                    let transaction_count = item.get("transaction_count")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .unwrap_or(0);
-                        
-                    let storage_usage_bytes = item.get("storage_usage_bytes")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<u64>().ok())
-                        .unwrap_or(0);
-                        
-                    let api_requests = item.get("api_requests")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<u32>().ok())
-                        .unwrap_or(0);
-                        
-                    let concurrent_calculations = item.get("concurrent_calculations")
-                        .and_then(|v| v.as_n().ok())
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .unwrap_or(0);
-                        
-                    let updated_at = item.get("updated_at")
-                        .and_then(|v| v.as_s().ok())
-                        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(Utc::now);
+                Err(e) => {
+                    last_error = Some(CalculationError::Database(format!("Failed to get tenant metrics: {}", e)));
                     
-                    // Create and return the TenantUsageMetrics
-                    Ok(TenantUsageMetrics {
-                        tenant_id: tenant_id.to_string(),
-                        portfolio_count,
-                        account_count,
-                        security_count,
-                        transaction_count,
-                        storage_usage_bytes,
-                        api_requests,
-                        concurrent_calculations,
-                        updated_at,
-                    })
-                } else {
-                    // If no metrics found, return default metrics
-                    Ok(TenantUsageMetrics::new(tenant_id))
+                    if attempt >= max_attempts {
+                        return Err(last_error.unwrap());
+                    }
+                    
+                    // Wait before retrying
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * attempt)).await;
                 }
-            },
-            Err(crate::resilience::CircuitBreakerError::Open) => {
-                // Circuit is open, return default metrics
-                warn!("Circuit breaker is open for DynamoDB metrics, returning default metrics");
-                Ok(TenantUsageMetrics::new(tenant_id))
-            },
-            Err(crate::resilience::CircuitBreakerError::ServiceError(e)) => {
-                // Service error
-                Err(e)
-            },
+            }
         }
     }
     
@@ -623,15 +612,15 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         // Convert metrics to DynamoDB item
         let mut item = HashMap::new();
         
-        item.insert("tenant_id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(metrics.tenant_id.clone()));
-        item.insert("portfolio_count".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.portfolio_count.to_string()));
-        item.insert("account_count".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.account_count.to_string()));
-        item.insert("security_count".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.security_count.to_string()));
-        item.insert("transaction_count".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.transaction_count.to_string()));
-        item.insert("storage_usage_bytes".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.storage_usage_bytes.to_string()));
-        item.insert("api_requests".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.api_requests.to_string()));
-        item.insert("concurrent_calculations".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(metrics.concurrent_calculations.to_string()));
-        item.insert("updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(metrics.updated_at.to_rfc3339()));
+        item.insert("tenant_id".to_string(), AttributeValue::S(metrics.tenant_id.clone()));
+        item.insert("portfolio_count".to_string(), AttributeValue::N(metrics.portfolio_count.to_string()));
+        item.insert("account_count".to_string(), AttributeValue::N(metrics.account_count.to_string()));
+        item.insert("security_count".to_string(), AttributeValue::N(metrics.security_count.to_string()));
+        item.insert("transaction_count".to_string(), AttributeValue::N(metrics.transaction_count.to_string()));
+        item.insert("storage_usage_bytes".to_string(), AttributeValue::N(metrics.storage_usage_bytes.to_string()));
+        item.insert("api_requests".to_string(), AttributeValue::N(metrics.api_requests.to_string()));
+        item.insert("concurrent_calculations".to_string(), AttributeValue::N(metrics.concurrent_calculations.to_string()));
+        item.insert("updated_at".to_string(), AttributeValue::S(metrics.updated_at.to_rfc3339()));
         
         // Put the item in DynamoDB
         self.client.put_item()
@@ -659,14 +648,14 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         
         // Create expression attribute values
         let mut expression_values = HashMap::new();
-        expression_values.insert(":amount".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(amount.to_string()));
-        expression_values.insert(":zero".to_string(), aws_sdk_dynamodb::model::AttributeValue::N("0".to_string()));
-        expression_values.insert(":updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(Utc::now().to_rfc3339()));
+        expression_values.insert(":amount".to_string(), AttributeValue::N(amount.to_string()));
+        expression_values.insert(":zero".to_string(), AttributeValue::N("0".to_string()));
+        expression_values.insert(":updated_at".to_string(), AttributeValue::S(Utc::now().to_rfc3339()));
         
         // Update the item in DynamoDB
         self.client.update_item()
             .table_name(&self.metrics_table_name)
-            .key("tenant_id", aws_sdk_dynamodb::model::AttributeValue::S(tenant_id.to_string()))
+            .key("tenant_id", AttributeValue::S(tenant_id.to_string()))
             .update_expression(update_expression)
             .set_expression_attribute_values(Some(expression_values))
             .send()
@@ -736,13 +725,13 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         
         // Create expression attribute values
         let mut expression_values = HashMap::new();
-        expression_values.insert(":new_value".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(new_value.to_string()));
-        expression_values.insert(":updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(Utc::now().to_rfc3339()));
+        expression_values.insert(":new_value".to_string(), AttributeValue::N(new_value.to_string()));
+        expression_values.insert(":updated_at".to_string(), AttributeValue::S(Utc::now().to_rfc3339()));
         
         // Update the item in DynamoDB
         self.client.update_item()
             .table_name(&self.metrics_table_name)
-            .key("tenant_id", aws_sdk_dynamodb::model::AttributeValue::S(tenant_id.to_string()))
+            .key("tenant_id", AttributeValue::S(tenant_id.to_string()))
             .update_expression(update_expression)
             .set_expression_attribute_values(Some(expression_values))
             .send()
@@ -756,15 +745,14 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
     async fn track_api_request(&self, tenant_id: &str) -> Result<(), CalculationError> {
         // Create expression attribute values
         let mut expression_values = HashMap::new();
-        expression_values.insert(":one".to_string(), aws_sdk_dynamodb::model::AttributeValue::N("1".to_string()));
-        expression_values.insert(":zero".to_string(), aws_sdk_dynamodb::model::AttributeValue::N("0".to_string()));
-        expression_values.insert(":updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(Utc::now().to_rfc3339()));
+        expression_values.insert(":one".to_string(), AttributeValue::N("1".to_string()));
+        expression_values.insert(":updated_at".to_string(), AttributeValue::S(Utc::now().to_rfc3339()));
         
         // Update the item in DynamoDB
         self.client.update_item()
             .table_name(&self.metrics_table_name)
-            .key("tenant_id", aws_sdk_dynamodb::model::AttributeValue::S(tenant_id.to_string()))
-            .update_expression("SET api_requests = if_not_exists(api_requests, :zero) + :one, updated_at = :updated_at")
+            .key("tenant_id", AttributeValue::S(tenant_id.to_string()))
+            .update_expression("SET api_requests = api_requests + :one, updated_at = :updated_at")
             .set_expression_attribute_values(Some(expression_values))
             .send()
             .await
@@ -776,13 +764,13 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
     async fn reset_api_requests(&self, tenant_id: &str) -> Result<(), CalculationError> {
         // Create expression attribute values
         let mut expression_values = HashMap::new();
-        expression_values.insert(":zero".to_string(), aws_sdk_dynamodb::model::AttributeValue::N("0".to_string()));
-        expression_values.insert(":updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(Utc::now().to_rfc3339()));
+        expression_values.insert(":zero".to_string(), AttributeValue::N("0".to_string()));
+        expression_values.insert(":updated_at".to_string(), AttributeValue::S(Utc::now().to_rfc3339()));
         
         // Update the item in DynamoDB
         self.client.update_item()
             .table_name(&self.metrics_table_name)
-            .key("tenant_id", aws_sdk_dynamodb::model::AttributeValue::S(tenant_id.to_string()))
+            .key("tenant_id", AttributeValue::S(tenant_id.to_string()))
             .update_expression("SET api_requests = :zero, updated_at = :updated_at")
             .set_expression_attribute_values(Some(expression_values))
             .send()
@@ -805,19 +793,19 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         
         // Create expression attribute values
         let mut expression_values = HashMap::new();
-        expression_values.insert(":tenant_id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(tenant_id.to_string()));
+        expression_values.insert(":tenant_id".to_string(), AttributeValue::S(tenant_id.to_string()));
         
         // Add filter expressions for date range if provided
         let mut filter_expressions = Vec::new();
         
         if let Some(start) = start_date {
             filter_expressions.push("period_end >= :start_date");
-            expression_values.insert(":start_date".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(start.to_rfc3339()));
+            expression_values.insert(":start_date".to_string(), AttributeValue::S(start.to_rfc3339()));
         }
         
         if let Some(end) = end_date {
             filter_expressions.push("period_start <= :end_date");
-            expression_values.insert(":end_date".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(end.to_rfc3339()));
+            expression_values.insert(":end_date".to_string(), AttributeValue::S(end.to_rfc3339()));
         }
         
         // Build the query
@@ -844,107 +832,106 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         // Convert items to TenantBillingRecord
         let mut records = Vec::new();
         
-        if let Some(items) = result.items() {
-            for item in items {
-                // Extract values from the DynamoDB item
-                let id = item.get("id")
-                    .and_then(|v| v.as_s().ok())
-                    .ok_or_else(|| CalculationError::Database("Missing id in billing record".to_string()))?
-                    .to_string();
-                
-                let period_start = item.get("period_start")
-                    .and_then(|v| v.as_s().ok())
-                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .ok_or_else(|| CalculationError::Database("Missing or invalid period_start in billing record".to_string()))?;
-                
-                let period_end = item.get("period_end")
-                    .and_then(|v| v.as_s().ok())
-                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .ok_or_else(|| CalculationError::Database("Missing or invalid period_end in billing record".to_string()))?;
-                
-                let subscription_tier = item.get("subscription_tier")
-                    .and_then(|v| v.as_s().ok())
-                    .ok_or_else(|| CalculationError::Database("Missing subscription_tier in billing record".to_string()))?
-                    .to_string();
-                
-                let base_amount = item.get("base_amount")
-                    .and_then(|v| v.as_n().ok())
-                    .and_then(|n| n.parse::<f64>().ok())
-                    .ok_or_else(|| CalculationError::Database("Missing or invalid base_amount in billing record".to_string()))?;
-                
-                let total_amount = item.get("total_amount")
-                    .and_then(|v| v.as_n().ok())
-                    .and_then(|n| n.parse::<f64>().ok())
-                    .ok_or_else(|| CalculationError::Database("Missing or invalid total_amount in billing record".to_string()))?;
-                
-                let currency = item.get("currency")
-                    .and_then(|v| v.as_s().ok())
-                    .ok_or_else(|| CalculationError::Database("Missing currency in billing record".to_string()))?
-                    .to_string();
-                
-                let status_str = item.get("status")
-                    .and_then(|v| v.as_s().ok())
-                    .ok_or_else(|| CalculationError::Database("Missing status in billing record".to_string()))?;
-                
-                let status = match status_str.as_str() {
-                    "pending" => BillingStatus::Pending,
-                    "paid" => BillingStatus::Paid,
-                    "failed" => BillingStatus::Failed,
-                    "cancelled" => BillingStatus::Cancelled,
-                    _ => return Err(CalculationError::Database(format!("Invalid status in billing record: {}", status_str))),
-                };
-                
-                let created_at = item.get("created_at")
-                    .and_then(|v| v.as_s().ok())
-                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .ok_or_else(|| CalculationError::Database("Missing or invalid created_at in billing record".to_string()))?;
-                
-                let updated_at = item.get("updated_at")
-                    .and_then(|v| v.as_s().ok())
-                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .ok_or_else(|| CalculationError::Database("Missing or invalid updated_at in billing record".to_string()))?;
-                
-                // Extract additional charges
-                let additional_charges = if let Some(charges_attr) = item.get("additional_charges") {
-                    if let Ok(charges_map) = charges_attr.as_m() {
-                        let mut charges = HashMap::new();
-                        for (key, value) in charges_map {
-                            if let Ok(amount_str) = value.as_n() {
-                                if let Ok(amount) = amount_str.parse::<f64>() {
-                                    charges.insert(key.clone(), amount);
-                                }
+        let items = result.items();
+        for item in items {
+            // Extract values from the DynamoDB item
+            let id = item.get("id")
+                .and_then(|v| v.as_s().ok())
+                .ok_or_else(|| CalculationError::Database("Missing id in billing record".to_string()))?
+                .to_string();
+            
+            let period_start = item.get("period_start")
+                .and_then(|v| v.as_s().ok())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok_or_else(|| CalculationError::Database("Missing or invalid period_start in billing record".to_string()))?;
+            
+            let period_end = item.get("period_end")
+                .and_then(|v| v.as_s().ok())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok_or_else(|| CalculationError::Database("Missing or invalid period_end in billing record".to_string()))?;
+            
+            let subscription_tier = item.get("subscription_tier")
+                .and_then(|v| v.as_s().ok())
+                .ok_or_else(|| CalculationError::Database("Missing subscription_tier in billing record".to_string()))?
+                .to_string();
+            
+            let base_amount = item.get("base_amount")
+                .and_then(|v| v.as_n().ok())
+                .and_then(|n| n.parse::<f64>().ok())
+                .ok_or_else(|| CalculationError::Database("Missing or invalid base_amount in billing record".to_string()))?;
+            
+            let total_amount = item.get("total_amount")
+                .and_then(|v| v.as_n().ok())
+                .and_then(|n| n.parse::<f64>().ok())
+                .ok_or_else(|| CalculationError::Database("Missing or invalid total_amount in billing record".to_string()))?;
+            
+            let currency = item.get("currency")
+                .and_then(|v| v.as_s().ok())
+                .ok_or_else(|| CalculationError::Database("Missing currency in billing record".to_string()))?
+                .to_string();
+            
+            let status_str = item.get("status")
+                .and_then(|v| v.as_s().ok())
+                .ok_or_else(|| CalculationError::Database("Missing status in billing record".to_string()))?;
+            
+            let status = match status_str.as_str() {
+                "pending" => BillingStatus::Pending,
+                "paid" => BillingStatus::Paid,
+                "failed" => BillingStatus::Failed,
+                "cancelled" => BillingStatus::Cancelled,
+                _ => return Err(CalculationError::Database(format!("Invalid status in billing record: {}", status_str))),
+            };
+            
+            let created_at = item.get("created_at")
+                .and_then(|v| v.as_s().ok())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok_or_else(|| CalculationError::Database("Missing or invalid created_at in billing record".to_string()))?;
+            
+            let updated_at = item.get("updated_at")
+                .and_then(|v| v.as_s().ok())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok_or_else(|| CalculationError::Database("Missing or invalid updated_at in billing record".to_string()))?;
+            
+            // Extract additional charges
+            let additional_charges = if let Some(charges_attr) = item.get("additional_charges") {
+                if let Ok(charges_map) = charges_attr.as_m() {
+                    let mut charges = HashMap::new();
+                    for (key, value) in charges_map {
+                        if let Ok(amount_str) = value.as_n() {
+                            if let Ok(amount) = amount_str.parse::<f64>() {
+                                charges.insert(key.clone(), amount);
                             }
                         }
-                        charges
-                    } else {
-                        HashMap::new()
                     }
+                    charges
                 } else {
                     HashMap::new()
-                };
-                
-                // Create the billing record
-                let record = TenantBillingRecord {
-                    id,
-                    tenant_id: tenant_id.to_string(),
-                    period_start,
-                    period_end,
-                    subscription_tier,
-                    base_amount,
-                    additional_charges,
-                    total_amount,
-                    currency,
-                    status,
-                    created_at,
-                    updated_at,
-                };
-                
-                records.push(record);
-            }
+                }
+            } else {
+                HashMap::new()
+            };
+            
+            // Create the billing record
+            let record = TenantBillingRecord {
+                id,
+                tenant_id: tenant_id.to_string(),
+                period_start,
+                period_end,
+                subscription_tier,
+                base_amount,
+                additional_charges,
+                total_amount,
+                currency,
+                status,
+                created_at,
+                updated_at,
+            };
+            
+            records.push(record);
         }
         
         // Apply offset if provided
@@ -966,14 +953,14 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         // Convert record to DynamoDB item
         let mut item = HashMap::new();
         
-        item.insert("id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.id.clone()));
-        item.insert("tenant_id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.tenant_id.clone()));
-        item.insert("period_start".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.period_start.to_rfc3339()));
-        item.insert("period_end".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.period_end.to_rfc3339()));
-        item.insert("subscription_tier".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.subscription_tier.clone()));
-        item.insert("base_amount".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(record.base_amount.to_string()));
-        item.insert("total_amount".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(record.total_amount.to_string()));
-        item.insert("currency".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.currency.clone()));
+        item.insert("id".to_string(), AttributeValue::S(record.id.clone()));
+        item.insert("tenant_id".to_string(), AttributeValue::S(record.tenant_id.clone()));
+        item.insert("period_start".to_string(), AttributeValue::S(record.period_start.to_rfc3339()));
+        item.insert("period_end".to_string(), AttributeValue::S(record.period_end.to_rfc3339()));
+        item.insert("subscription_tier".to_string(), AttributeValue::S(record.subscription_tier.clone()));
+        item.insert("base_amount".to_string(), AttributeValue::N(record.base_amount.to_string()));
+        item.insert("total_amount".to_string(), AttributeValue::N(record.total_amount.to_string()));
+        item.insert("currency".to_string(), AttributeValue::S(record.currency.clone()));
         
         // Convert status to string
         let status_str = match record.status {
@@ -982,18 +969,18 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
             BillingStatus::Failed => "failed",
             BillingStatus::Cancelled => "cancelled",
         };
-        item.insert("status".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(status_str.to_string()));
+        item.insert("status".to_string(), AttributeValue::S(status_str.to_string()));
         
-        item.insert("created_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.created_at.to_rfc3339()));
-        item.insert("updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.updated_at.to_rfc3339()));
+        item.insert("created_at".to_string(), AttributeValue::S(record.created_at.to_rfc3339()));
+        item.insert("updated_at".to_string(), AttributeValue::S(record.updated_at.to_rfc3339()));
         
         // Convert additional charges to DynamoDB map
         if !record.additional_charges.is_empty() {
             let mut charges_map = HashMap::new();
             for (key, value) in &record.additional_charges {
-                charges_map.insert(key.clone(), aws_sdk_dynamodb::model::AttributeValue::N(value.to_string()));
+                charges_map.insert(key.clone(), AttributeValue::N(value.to_string()));
             }
-            item.insert("additional_charges".to_string(), aws_sdk_dynamodb::model::AttributeValue::M(charges_map));
+            item.insert("additional_charges".to_string(), AttributeValue::M(charges_map));
         }
         
         // Put the item in DynamoDB
@@ -1011,8 +998,8 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
     async fn update_billing_record(&self, record: TenantBillingRecord) -> Result<TenantBillingRecord, CalculationError> {
         // Check if the record exists
         let mut key = HashMap::new();
-        key.insert("id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.id.clone()));
-        key.insert("tenant_id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.tenant_id.clone()));
+        key.insert("id".to_string(), AttributeValue::S(record.id.clone()));
+        key.insert("tenant_id".to_string(), AttributeValue::S(record.tenant_id.clone()));
         
         let result = self.client.get_item()
             .table_name(&self.billing_table_name)
@@ -1028,14 +1015,14 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
         // Convert record to DynamoDB item (same as create_billing_record)
         let mut item = HashMap::new();
         
-        item.insert("id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.id.clone()));
-        item.insert("tenant_id".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.tenant_id.clone()));
-        item.insert("period_start".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.period_start.to_rfc3339()));
-        item.insert("period_end".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.period_end.to_rfc3339()));
-        item.insert("subscription_tier".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.subscription_tier.clone()));
-        item.insert("base_amount".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(record.base_amount.to_string()));
-        item.insert("total_amount".to_string(), aws_sdk_dynamodb::model::AttributeValue::N(record.total_amount.to_string()));
-        item.insert("currency".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.currency.clone()));
+        item.insert("id".to_string(), AttributeValue::S(record.id.clone()));
+        item.insert("tenant_id".to_string(), AttributeValue::S(record.tenant_id.clone()));
+        item.insert("period_start".to_string(), AttributeValue::S(record.period_start.to_rfc3339()));
+        item.insert("period_end".to_string(), AttributeValue::S(record.period_end.to_rfc3339()));
+        item.insert("subscription_tier".to_string(), AttributeValue::S(record.subscription_tier.clone()));
+        item.insert("base_amount".to_string(), AttributeValue::N(record.base_amount.to_string()));
+        item.insert("total_amount".to_string(), AttributeValue::N(record.total_amount.to_string()));
+        item.insert("currency".to_string(), AttributeValue::S(record.currency.clone()));
         
         // Convert status to string
         let status_str = match record.status {
@@ -1044,18 +1031,18 @@ impl TenantMetricsManager for DynamoDbTenantMetricsManager {
             BillingStatus::Failed => "failed",
             BillingStatus::Cancelled => "cancelled",
         };
-        item.insert("status".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(status_str.to_string()));
+        item.insert("status".to_string(), AttributeValue::S(status_str.to_string()));
         
-        item.insert("created_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.created_at.to_rfc3339()));
-        item.insert("updated_at".to_string(), aws_sdk_dynamodb::model::AttributeValue::S(record.updated_at.to_rfc3339()));
+        item.insert("created_at".to_string(), AttributeValue::S(record.created_at.to_rfc3339()));
+        item.insert("updated_at".to_string(), AttributeValue::S(record.updated_at.to_rfc3339()));
         
         // Convert additional charges to DynamoDB map
         if !record.additional_charges.is_empty() {
             let mut charges_map = HashMap::new();
             for (key, value) in &record.additional_charges {
-                charges_map.insert(key.clone(), aws_sdk_dynamodb::model::AttributeValue::N(value.to_string()));
+                charges_map.insert(key.clone(), AttributeValue::N(value.to_string()));
             }
-            item.insert("additional_charges".to_string(), aws_sdk_dynamodb::model::AttributeValue::M(charges_map));
+            item.insert("additional_charges".to_string(), AttributeValue::M(charges_map));
         }
         
         // Put the item in DynamoDB
@@ -1089,5 +1076,26 @@ pub async fn get_tenant_metrics_manager() -> Result<Box<dyn TenantMetricsManager
         }
     } else {
         Ok(Box::new(InMemoryTenantMetricsManager::new()))
+    }
+}
+
+/// Wrapper type for Portfolio to implement From for DynamoDB
+pub struct PortfolioDynamoDb(Portfolio);
+
+impl From<Portfolio> for PortfolioDynamoDb {
+    fn from(portfolio: Portfolio) -> Self {
+        PortfolioDynamoDb(portfolio)
+    }
+}
+
+impl From<PortfolioDynamoDb> for HashMap<String, AttributeValue> {
+    fn from(wrapper: PortfolioDynamoDb) -> Self {
+        let portfolio = wrapper.0;
+        let mut map = HashMap::new();
+        map.insert("id".to_string(), AttributeValue::S(portfolio.id));
+        map.insert("name".to_string(), AttributeValue::S(portfolio.name));
+        map.insert("created_at".to_string(), AttributeValue::S(portfolio.created_at.to_rfc3339()));
+        map.insert("updated_at".to_string(), AttributeValue::S(portfolio.updated_at.to_rfc3339()));
+        map
     }
 } 

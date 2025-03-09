@@ -136,14 +136,14 @@ pub fn calculate_benchmark_comparison(
     annualized_benchmark_return: Decimal,
     risk_free_rate: Option<Decimal>
 ) -> Result<BenchmarkComparison> {
-    if portfolio_series.dates.len() != portfolio_series.returns.len() ||
-       benchmark_series.dates.len() != benchmark_series.returns.len() ||
+    if portfolio_series.dates.len() != portfolio_series.values.len() ||
+       benchmark_series.dates.len() != benchmark_series.values.len() ||
        portfolio_series.dates.len() != benchmark_series.dates.len() {
-        return Err(anyhow!("Return series have inconsistent lengths"));
+        return Err(anyhow!("Date and return series must have the same length"));
     }
     
-    let portfolio_returns = &portfolio_series.returns;
-    let benchmark_returns = &benchmark_series.returns;
+    let portfolio_returns = &portfolio_series.values;
+    let benchmark_returns = &benchmark_series.values;
     
     // Calculate cumulative returns
     let portfolio_return = portfolio_returns.iter().fold(Decimal::ONE, |acc, r| acc * (Decimal::ONE + *r)) - Decimal::ONE;
@@ -167,13 +167,11 @@ pub fn calculate_benchmark_comparison(
     let tracking_error = calculate_tracking_error(portfolio_returns, benchmark_returns);
     
     // Calculate information ratio
-    let information_ratio = tracking_error.and_then(|te| {
-        if te == Decimal::ZERO {
-            None
-        } else {
-            Some((annualized_portfolio_return - annualized_benchmark_return) / te)
-        }
-    });
+    let information_ratio = if tracking_error == Decimal::ZERO {
+        None
+    } else {
+        Some(excess_return / tracking_error)
+    };
     
     // Calculate up/down capture
     let up_capture = calculate_up_capture(portfolio_returns, benchmark_returns);
@@ -188,7 +186,7 @@ pub fn calculate_benchmark_comparison(
         excess_return,
         beta,
         alpha,
-        tracking_error,
+        tracking_error: Some(tracking_error),
         information_ratio,
         up_capture,
         down_capture,
@@ -233,12 +231,12 @@ mod tests {
         
         let portfolio_series = ReturnSeries {
             dates: dates.clone(),
-            returns: portfolio_returns.clone(),
+            values: portfolio_returns.clone(),
         };
         
         let benchmark_series = ReturnSeries {
             dates,
-            returns: benchmark_returns.clone(),
+            values: benchmark_returns.clone(),
         };
         
         // Annualized returns (simplified for test)

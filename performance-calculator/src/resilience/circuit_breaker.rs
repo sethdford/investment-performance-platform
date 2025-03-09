@@ -1,8 +1,15 @@
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use tracing::{info, warn, error};
 use thiserror::Error;
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::error::Error;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use tokio::time::sleep;
+use std::future::Future;
+use std::pin::Pin;
 
 /// Circuit breaker error
 #[derive(Error, Debug)]
@@ -12,19 +19,28 @@ pub enum CircuitBreakerError<E> {
     
     #[error("Underlying service error: {0}")]
     ServiceError(E),
+
+    #[error("Internal circuit breaker error: {0}")]
+    Internal(String),
 }
 
 /// Circuit breaker state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CircuitState {
-    /// Circuit is closed, requests are allowed
-    Closed,
-    
-    /// Circuit is open, requests are not allowed
-    Open,
-    
-    /// Circuit is half-open, allowing a limited number of requests to test if the service is healthy
-    HalfOpen,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CircuitBreakerState {
+    Closed = 0,
+    Open = 1,
+    HalfOpen = 2,
+}
+
+impl From<u32> for CircuitBreakerState {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => CircuitBreakerState::Closed,
+            1 => CircuitBreakerState::Open,
+            2 => CircuitBreakerState::HalfOpen,
+            _ => CircuitBreakerState::Open, // Default to Open for safety
+        }
+    }
 }
 
 /// Circuit breaker configuration
@@ -54,7 +70,7 @@ impl Default for CircuitBreakerConfig {
 #[derive(Debug, Clone)]
 pub struct CircuitBreakerMetrics {
     /// Current state
-    pub state: CircuitState,
+    pub state: CircuitBreakerState,
     
     /// Failure count
     pub failure_count: u32,
@@ -78,7 +94,7 @@ pub struct CircuitBreakerMetrics {
 impl Default for CircuitBreakerMetrics {
     fn default() -> Self {
         Self {
-            state: CircuitState::Closed,
+            state: CircuitBreakerState::Closed,
             failure_count: 0,
             half_open_success_count: 0,
             last_state_change: Instant::now(),
@@ -90,216 +106,192 @@ impl Default for CircuitBreakerMetrics {
 }
 
 /// Circuit breaker trait
-#[async_trait]
-pub trait CircuitBreaker<T, E> {
-    /// Execute a function with circuit breaker protection
-    async fn execute<F, Fut>(&self, f: F) -> Result<T, CircuitBreakerError<E>>
-    where
-        F: FnOnce() -> Fut + Send,
-        Fut: std::future::Future<Output = Result<T, E>> + Send;
+pub trait CircuitBreaker<E>: Send + Sync {
+    type Future: Future<Output = Result<(), CircuitBreakerError<E>>> + Send;
     
-    /// Get current circuit breaker metrics
-    fn metrics(&self) -> CircuitBreakerMetrics;
+    fn check(&self) -> Self::Future;
     
-    /// Reset the circuit breaker
-    fn reset(&self);
+    fn on_success(&self);
+    fn on_error(&self, error: &E);
+    fn get_state(&self) -> CircuitBreakerState;
 }
 
 /// Standard circuit breaker implementation
 pub struct StandardCircuitBreaker {
-    config: CircuitBreakerConfig,
-    metrics: Arc<Mutex<CircuitBreakerMetrics>>,
+    name: String,
+    state: Arc<AtomicU32>,
+    failure_threshold: u32,
+    reset_timeout: Duration,
+    last_failure_time: Arc<AtomicU32>,
+    failure_count: Arc<AtomicU32>,
 }
 
 impl StandardCircuitBreaker {
     /// Create a new circuit breaker
-    pub fn new(config: CircuitBreakerConfig) -> Self {
+    pub fn new(name: String, config: CircuitBreakerConfig) -> Self {
         Self {
-            config,
-            metrics: Arc::new(Mutex::new(CircuitBreakerMetrics::default())),
+            name,
+            state: Arc::new(AtomicU32::new(CircuitBreakerState::Closed as u32)),
+            failure_threshold: config.failure_threshold,
+            reset_timeout: Duration::from_secs(config.reset_timeout_seconds),
+            last_failure_time: Arc::new(AtomicU32::new(0)),
+            failure_count: Arc::new(AtomicU32::new(0)),
         }
     }
     
     /// Create a new circuit breaker with default configuration
     pub fn default() -> Self {
-        Self::new(CircuitBreakerConfig::default())
+        Self::new("default".to_string(), CircuitBreakerConfig::default())
     }
     
     /// Check if the circuit is closed
-    fn is_closed(&self) -> bool {
-        let metrics = self.metrics.lock().unwrap();
-        metrics.state == CircuitState::Closed
+    fn is_closed(&self) -> Result<bool, String> {
+        let state = CircuitBreakerState::from(self.state.load(Ordering::SeqCst));
+        Ok(state == CircuitBreakerState::Closed)
     }
     
     /// Check if the circuit is open
-    fn is_open(&self) -> bool {
-        let metrics = self.metrics.lock().unwrap();
+    fn is_open(&self) -> Result<bool, String> {
+        let state = CircuitBreakerState::from(self.state.load(Ordering::SeqCst));
         
-        if metrics.state == CircuitState::Open {
+        if state == CircuitBreakerState::Open {
             // Check if reset timeout has elapsed
-            let elapsed = metrics.last_state_change.elapsed().as_secs();
+            let last_failure_timestamp = self.last_failure_time.load(Ordering::SeqCst);
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            let elapsed = now.saturating_sub(last_failure_timestamp);
+            let config_secs = self.reset_timeout.as_secs() as u32;
             
-            if elapsed >= self.config.reset_timeout_seconds {
+            if elapsed >= config_secs {
                 // Transition to half-open state
-                drop(metrics);
-                self.transition_to_half_open();
-                return false;
+                self.state.store(CircuitBreakerState::HalfOpen as u32, Ordering::SeqCst);
+                return Ok(false);
             }
             
-            return true;
+            return Ok(true);
         }
         
-        false
+        Ok(false)
     }
     
     /// Check if the circuit is half-open
-    fn is_half_open(&self) -> bool {
-        let metrics = self.metrics.lock().unwrap();
-        metrics.state == CircuitState::HalfOpen
+    fn is_half_open(&self) -> Result<bool, String> {
+        let state = CircuitBreakerState::from(self.state.load(Ordering::SeqCst));
+        Ok(state == CircuitBreakerState::HalfOpen)
     }
     
     /// Transition to open state
-    fn transition_to_open(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
+    fn transition_to_open(&self) -> Result<(), String> {
+        let state = self.state.load(Ordering::SeqCst);
         
-        if metrics.state != CircuitState::Open {
+        if state != CircuitBreakerState::Open as u32 {
             info!("Circuit breaker transitioning to OPEN state");
-            metrics.state = CircuitState::Open;
-            metrics.last_state_change = Instant::now();
+            self.state.store(CircuitBreakerState::Open as u32, Ordering::SeqCst);
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            self.last_failure_time.store(now, Ordering::SeqCst);
         }
+        Ok(())
     }
     
     /// Transition to half-open state
-    fn transition_to_half_open(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
+    fn transition_to_half_open(&self) -> Result<(), String> {
+        let state = self.state.load(Ordering::SeqCst);
         
-        if metrics.state != CircuitState::HalfOpen {
+        if state != CircuitBreakerState::HalfOpen as u32 {
             info!("Circuit breaker transitioning to HALF-OPEN state");
-            metrics.state = CircuitState::HalfOpen;
-            metrics.half_open_success_count = 0;
-            metrics.last_state_change = Instant::now();
+            self.state.store(CircuitBreakerState::HalfOpen as u32, Ordering::SeqCst);
+            self.failure_count.store(0, Ordering::SeqCst);
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            self.last_failure_time.store(now, Ordering::SeqCst);
         }
+        Ok(())
     }
     
     /// Transition to closed state
-    fn transition_to_closed(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
+    fn transition_to_closed(&self) -> Result<(), String> {
+        let state = self.state.load(Ordering::SeqCst);
         
-        if metrics.state != CircuitState::Closed {
+        if state != CircuitBreakerState::Closed as u32 {
             info!("Circuit breaker transitioning to CLOSED state");
-            metrics.state = CircuitState::Closed;
-            metrics.failure_count = 0;
-            metrics.last_state_change = Instant::now();
+            self.state.store(CircuitBreakerState::Closed as u32, Ordering::SeqCst);
+            self.failure_count.store(0, Ordering::SeqCst);
+            self.last_failure_time.store(0, Ordering::SeqCst);
         }
+        Ok(())
     }
     
     /// Record a successful request
-    fn record_success(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
-        metrics.total_requests += 1;
-        metrics.successful_requests += 1;
-        
-        match metrics.state {
-            CircuitState::Closed => {
-                // Reset failure count on success
-                metrics.failure_count = 0;
-            },
-            CircuitState::HalfOpen => {
-                // Increment success count in half-open state
-                metrics.half_open_success_count += 1;
-                
-                // Check if we've reached the threshold to close the circuit
-                if metrics.half_open_success_count >= self.config.half_open_request_threshold {
-                    drop(metrics);
-                    self.transition_to_closed();
-                }
-            },
-            CircuitState::Open => {
-                // This shouldn't happen, but just in case
-                warn!("Successful request while circuit is open");
-            },
-        }
+    fn record_success(&self) -> Result<(), String> {
+        self.failure_count.store(0, Ordering::SeqCst);
+        self.state.store(CircuitBreakerState::Closed as u32, Ordering::SeqCst);
+        Ok(())
     }
     
     /// Record a failed request
-    fn record_failure(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
-        metrics.total_requests += 1;
-        metrics.failed_requests += 1;
-        
-        match metrics.state {
-            CircuitState::Closed => {
-                // Increment failure count
-                metrics.failure_count += 1;
-                
-                // Check if we've reached the threshold to open the circuit
-                if metrics.failure_count >= self.config.failure_threshold {
-                    drop(metrics);
-                    self.transition_to_open();
-                }
-            },
-            CircuitState::HalfOpen => {
-                // Any failure in half-open state opens the circuit again
-                drop(metrics);
-                self.transition_to_open();
-            },
-            CircuitState::Open => {
-                // This shouldn't happen, but just in case
-                warn!("Failed request while circuit is open");
-            },
+    fn record_failure(&self) -> Result<(), String> {
+        let failures = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
+        if failures >= self.failure_threshold {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            self.last_failure_time.store(now, Ordering::SeqCst);
+            self.state.store(CircuitBreakerState::Open as u32, Ordering::SeqCst);
         }
+        Ok(())
     }
 }
 
-#[async_trait]
-impl<T, E> CircuitBreaker<T, E> for StandardCircuitBreaker
+impl<E> CircuitBreaker<E> for StandardCircuitBreaker
 where
-    T: Send,
     E: std::error::Error + Send + Sync + 'static,
 {
-    async fn execute<F, Fut>(&self, f: F) -> Result<T, CircuitBreakerError<E>>
-    where
-        F: FnOnce() -> Fut + Send,
-        Fut: std::future::Future<Output = Result<T, E>> + Send,
-    {
-        // Check if circuit is open
-        if self.is_open() {
-            return Err(CircuitBreakerError::Open);
-        }
-        
-        // Execute the function
-        match f().await {
-            Ok(result) => {
-                // Record success
-                self.record_success();
-                Ok(result)
-            },
-            Err(err) => {
-                // Record failure
-                self.record_failure();
-                Err(CircuitBreakerError::ServiceError(err))
-            },
+    type Future = Pin<Box<dyn Future<Output = Result<(), CircuitBreakerError<E>>> + Send>>;
+
+    fn check(&self) -> Self::Future {
+        let state = CircuitBreakerState::from(self.state.load(Ordering::SeqCst));
+        let last_failure_timestamp = self.last_failure_time.load(Ordering::SeqCst);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+        let elapsed = now.saturating_sub(last_failure_timestamp);
+        let config_secs = self.reset_timeout.as_secs() as u32;
+
+        Box::pin(async move {
+            match state {
+                CircuitBreakerState::Closed => Ok(()),
+                CircuitBreakerState::Open => {
+                    if elapsed > config_secs {
+                        Ok(())
+                    } else {
+                        Err(CircuitBreakerError::Open)
+                    }
+                }
+                CircuitBreakerState::HalfOpen => Ok(()),
+            }
+        })
+    }
+
+    fn on_success(&self) {
+        self.failure_count.store(0, Ordering::SeqCst);
+        self.state.store(CircuitBreakerState::Closed as u32, Ordering::SeqCst);
+    }
+
+    fn on_error(&self, error: &E) {
+        let failures = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
+        if failures >= self.failure_threshold {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            self.last_failure_time.store(now, Ordering::SeqCst);
+            self.state.store(CircuitBreakerState::Open as u32, Ordering::SeqCst);
         }
     }
-    
-    fn metrics(&self) -> CircuitBreakerMetrics {
-        self.metrics.lock().unwrap().clone()
-    }
-    
-    fn reset(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
-        *metrics = CircuitBreakerMetrics::default();
-        info!("Circuit breaker reset to initial state");
+
+    fn get_state(&self) -> CircuitBreakerState {
+        CircuitBreakerState::from(self.state.load(Ordering::SeqCst))
     }
 }
 
-/// Circuit breaker registry to manage multiple circuit breakers
+/// Registry for circuit breakers
 pub struct CircuitBreakerRegistry {
     circuit_breakers: Arc<Mutex<HashMap<String, Arc<StandardCircuitBreaker>>>>,
 }
 
 impl CircuitBreakerRegistry {
-    /// Create a new circuit breaker registry
+    /// Create a new registry
     pub fn new() -> Self {
         Self {
             circuit_breakers: Arc::new(Mutex::new(HashMap::new())),
@@ -307,32 +299,36 @@ impl CircuitBreakerRegistry {
     }
     
     /// Get or create a circuit breaker
-    pub fn get_or_create(&self, name: &str, config: Option<CircuitBreakerConfig>) -> Arc<StandardCircuitBreaker> {
-        let mut circuit_breakers = self.circuit_breakers.lock().unwrap();
+    pub fn get_or_create(&self, name: &str, config: Option<CircuitBreakerConfig>) -> Result<Arc<StandardCircuitBreaker>, String> {
+        let mut breakers = self.circuit_breakers.lock()
+            .map_err(|e| format!("Failed to acquire registry lock: {}", e))?;
         
-        if let Some(cb) = circuit_breakers.get(name) {
-            cb.clone()
+        if let Some(breaker) = breakers.get(name) {
+            Ok(Arc::clone(breaker))
         } else {
-            let cb = Arc::new(StandardCircuitBreaker::new(config.unwrap_or_default()));
-            circuit_breakers.insert(name.to_string(), cb.clone());
-            cb
+            let breaker = Arc::new(StandardCircuitBreaker::new(name.to_string(), config.unwrap_or_default()));
+            breakers.insert(name.to_string(), Arc::clone(&breaker));
+            Ok(breaker)
         }
     }
     
     /// Get all circuit breakers
-    pub fn get_all(&self) -> HashMap<String, Arc<StandardCircuitBreaker>> {
-        let circuit_breakers = self.circuit_breakers.lock().unwrap();
-        circuit_breakers.clone()
+    pub fn get_all(&self) -> Result<HashMap<String, Arc<StandardCircuitBreaker>>, String> {
+        self.circuit_breakers.lock()
+            .map(|breakers| breakers.clone())
+            .map_err(|e| format!("Failed to acquire registry lock: {}", e))
     }
     
     /// Reset all circuit breakers
-    pub fn reset_all(&self) {
-        let circuit_breakers = self.circuit_breakers.lock().unwrap();
+    pub fn reset_all(&self) -> Result<(), String> {
+        let breakers = self.circuit_breakers.lock()
+            .map_err(|e| format!("Failed to acquire registry lock: {}", e))?;
         
-        for (name, cb) in circuit_breakers.iter() {
-            info!("Resetting circuit breaker: {}", name);
-            cb.reset();
+        for breaker in breakers.values() {
+            breaker.transition_to_closed()
+                .map_err(|e| format!("Failed to reset circuit breaker: {:?}", e))?;
         }
+        Ok(())
     }
 }
 
@@ -342,21 +338,24 @@ impl Default for CircuitBreakerRegistry {
     }
 }
 
-/// Global circuit breaker registry
-static mut CIRCUIT_BREAKER_REGISTRY: Option<CircuitBreakerRegistry> = None;
+// Global registry instance
+lazy_static::lazy_static! {
+    static ref CIRCUIT_BREAKER_REGISTRY: CircuitBreakerRegistry = CircuitBreakerRegistry::new();
+}
 
 /// Get the global circuit breaker registry
 pub fn get_circuit_breaker_registry() -> &'static CircuitBreakerRegistry {
-    unsafe {
-        if CIRCUIT_BREAKER_REGISTRY.is_none() {
-            CIRCUIT_BREAKER_REGISTRY = Some(CircuitBreakerRegistry::new());
-        }
-        
-        CIRCUIT_BREAKER_REGISTRY.as_ref().unwrap()
-    }
+    &CIRCUIT_BREAKER_REGISTRY
 }
 
-/// Get a circuit breaker from the global registry
-pub fn get_circuit_breaker(name: &str, config: Option<CircuitBreakerConfig>) -> Arc<StandardCircuitBreaker> {
-    get_circuit_breaker_registry().get_or_create(name, config)
+/// Get a circuit breaker by name
+pub fn get_circuit_breaker(name: &str) -> Result<Arc<StandardCircuitBreaker>, String> {
+    // For now, just return a new circuit breaker with default config
+    Ok(Arc::new(StandardCircuitBreaker::default()))
+}
+
+/// Get a circuit breaker by name with custom config
+pub fn get_circuit_breaker_with_config(name: &str, config: CircuitBreakerConfig) -> Result<Arc<StandardCircuitBreaker>, String> {
+    // For now, just return a new circuit breaker with the provided config
+    Ok(Arc::new(StandardCircuitBreaker::new(name.to_string(), config)))
 } 

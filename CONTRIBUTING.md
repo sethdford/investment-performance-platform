@@ -1,85 +1,108 @@
-# Contributing to Investment Performance Calculator
+# Contributing to the Open FI.AI Platform
 
-Thank you for considering contributing to the Investment Performance Calculator! This document outlines the process for contributing to the project.
+Thank you for your interest in contributing to the Open FI.AI Platform! This document provides guidelines and instructions for contributing to this project.
+
+## Table of Contents
+
+- [Contributing to the Open FI.AI Platform](#contributing-to-the-open-fiai-platform)
+  - [Table of Contents](#table-of-contents)
+  - [Code of Conduct](#code-of-conduct)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Setup](#setup)
+  - [How to Contribute](#how-to-contribute)
+    - [Reporting Bugs](#reporting-bugs)
+    - [Suggesting Enhancements](#suggesting-enhancements)
+    - [Pull Requests](#pull-requests)
+  - [Development Workflow](#development-workflow)
+  - [Coding Standards](#coding-standards)
+  - [Testing Guidelines](#testing-guidelines)
+  - [Documentation](#documentation)
+  - [Financial and Regulatory Considerations](#financial-and-regulatory-considerations)
 
 ## Code of Conduct
 
-By participating in this project, you agree to abide by our Code of Conduct. Please read it before contributing.
+This project adheres to a Code of Conduct that all contributors are expected to follow. By participating, you are expected to uphold this code. Please report unacceptable behavior to the project maintainers.
 
-## How Can I Contribute?
+## Getting Started
+
+### Prerequisites
+
+- Rust (latest stable version)
+- Cargo
+- Git
+
+### Setup
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/yourusername/open-fiai-platform.git`
+3. Add the upstream repository: `git remote add upstream https://github.com/original/open-fiai-platform.git`
+4. Create a new branch for your changes: `git checkout -b feature/your-feature-name`
+
+## How to Contribute
 
 ### Reporting Bugs
 
-- Check if the bug has already been reported in the Issues section.
-- If not, create a new issue with a clear title and description.
-- Include steps to reproduce the bug, expected behavior, and actual behavior.
-- Include any relevant logs or screenshots.
+- Use the issue tracker to report bugs
+- Describe the bug in detail
+- Include steps to reproduce
+- Include information about your environment
 
 ### Suggesting Enhancements
 
-- Check if the enhancement has already been suggested in the Issues section.
-- If not, create a new issue with a clear title and description.
-- Explain why the enhancement would be useful.
-- Provide examples of how the enhancement would work.
+- Use the issue tracker to suggest enhancements
+- Clearly describe the enhancement and its benefits
+- Provide examples of how the enhancement would work
 
 ### Pull Requests
 
-1. Fork the repository.
-2. Create a new branch from `develop` for your changes.
-3. Make your changes.
-4. Run tests to ensure your changes don't break existing functionality.
-5. Submit a pull request to the `develop` branch.
+1. Update your fork to the latest upstream version
+2. Create a new branch for your changes
+3. Make your changes
+4. Run tests and ensure they pass
+5. Update documentation as needed
+6. Submit a pull request
 
-## Development Process
+## Development Workflow
 
-### Setting Up the Development Environment
+1. Pick an issue to work on or create a new one
+2. Discuss the approach in the issue
+3. Implement your changes
+4. Write tests for your changes
+5. Update documentation
+6. Submit a pull request
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/investment-performance-calculator.git
-   cd investment-performance-calculator
-   ```
+## Coding Standards
 
-2. Install dependencies:
-   ```
-   cargo build
-   ```
+- Follow Rust's official style guide
+- Use `cargo fmt` to format your code
+- Use `cargo clippy` to check for common mistakes
+- Write clear, descriptive commit messages
+- Keep functions small and focused
+- Use meaningful variable and function names
 
-3. Run tests:
-   ```
-   cargo test
-   ```
+## Testing Guidelines
 
-### Coding Standards
+- Write unit tests for all new functionality
+- Ensure all tests pass before submitting a pull request
+- Include integration tests for complex features
+- Document test cases clearly
 
-- Follow the Rust style guide.
-- Use meaningful variable and function names.
-- Write clear comments for complex logic.
-- Include unit tests for new functionality.
-- Update documentation for API changes.
+## Documentation
 
-### Commit Messages
+- Update documentation for any changes to public APIs
+- Use Rust's documentation comments (`///`) for public items
+- Include examples in documentation where appropriate
+- Keep the README and other documentation up to date
 
-- Use clear and descriptive commit messages.
-- Reference issue numbers in commit messages.
-- Use the present tense ("Add feature" not "Added feature").
-- Use the imperative mood ("Move cursor to..." not "Moves cursor to...").
+## Financial and Regulatory Considerations
 
-### Pull Request Process
+When contributing to this platform, please be mindful of the following:
 
-1. Update the README.md or documentation with details of changes if needed.
-2. Update the tests to reflect your changes.
-3. The PR should work on all supported platforms.
-4. The PR will be merged once it receives approval from maintainers.
+- Financial calculations must be accurate and well-tested
+- Clearly document any assumptions made in financial models
+- Be aware of regulatory implications of features
+- Include appropriate disclaimers for financial functionality
+- Do not include specific financial advice in the codebase
 
-## Release Process
-
-1. Maintainers will create a release branch from `develop`.
-2. Final testing and bug fixes will be done on the release branch.
-3. Once ready, the release branch will be merged into `main`.
-4. A new tag will be created for the release.
-5. The release will be deployed to production.
-
-## License
-
-By contributing to this project, you agree that your contributions will be licensed under the project's license. 
+Thank you for contributing to the Open FI.AI Platform! 
